@@ -30,6 +30,8 @@ setup(
             'talker = hello_ros.talker:main',
             
             'listener = hello_ros.listener:main',
+            'add_server = hello_ros.add_server:main',
+            'add_client = hello_ros.add_client:main',
             #   终端名用 talker，文件就是刚写的 talker.py，函数是 main
         ],
     },
