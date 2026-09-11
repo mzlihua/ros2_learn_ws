@@ -26,6 +26,12 @@ setup(
     entry_points={
         'console_scripts': [
             'hello_node = hello_ros.hello_node:main',
+            # TODO 5：格式是 '终端里敲的名字 = 包名.文件名:函数名'
+            'talker = hello_ros.talker:main',
+            
+            'listener = hello_ros.listener:main',
+            #   终端名用 talker，文件就是刚写的 talker.py，函数是 main
         ],
     },
+
 )
