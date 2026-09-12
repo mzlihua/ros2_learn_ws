@@ -3,7 +3,7 @@ from rclpy.node import Node
 
 
 class HelloNode(Node):
-    """一个最小 ROS 2 节点：每 1 秒打印一次心跳。"""
+    """一个最小 ROS 2 节点：每 1 秒打印一次心跳."""
 
     def __init__(self):
         super().__init__('hello_node')            # 节点名（ros2 node list 里会看到）
