@@ -16,8 +16,8 @@ setup(
     zip_safe=True,
     maintainer='mzlihua',
     maintainer_email='3581703344@qq.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='ROS 2 核心基础练习包：话题、服务、参数、launch、动作、自定义消息的示例节点',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
@@ -26,13 +26,11 @@ setup(
     entry_points={
         'console_scripts': [
             'hello_node = hello_ros.hello_node:main',
-            # TODO 5：格式是 '终端里敲的名字 = 包名.文件名:函数名'
             'talker = hello_ros.talker:main',
-            
             'listener = hello_ros.listener:main',
             'add_server = hello_ros.add_server:main',
             'add_client = hello_ros.add_client:main',
-            #   终端名用 talker，文件就是刚写的 talker.py，函数是 main
+            'param_talker = hello_ros.param_talker:main',
         ],
     },
 
