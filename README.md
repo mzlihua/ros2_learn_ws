@@ -176,7 +176,8 @@ pkill -f "hello_ros"
 | `hello_cpp` | [hello_cpp.cpp](src/hello_ros_cpp/src/hello_cpp.cpp) | 最小节点（C++ 版），每秒打印一次心跳 | `ros2 run hello_ros_cpp hello_cpp` |
 | `talker` | [talker.cpp](src/hello_ros_cpp/src/talker.cpp) | 发布者（C++ 版），每秒往 `/chatter` 发一条 | `ros2 topic echo /chatter` |
 
-⚠️ `talker.cpp` 里两处占位符 `"..."` 还没填（见 [cpp-01 笔记](docs/cpp-01-getting-started.md) 末尾「待办」）。
+> 💡 `hello_ros_cpp talker` 和 `hello_ros talker` 发的是**同一个话题** `/chatter`，
+> 所以可以拿 `hello_ros_cpp talker` + `hello_ros listener` 直接验证**跨语言互操作**。
 
 ### 典型组合
 
@@ -291,7 +292,7 @@ colcon test-result --verbose                            # ② 查看（不执行
 
 - [x] ~~`package.xml` 的 `<description>` / `<license>` 占位~~（2026-09-12 已补：Apache-2.0）
 - [x] ~~清理源码里练习时的 `# TODO n：...` 注释~~（2026-09-12 已清）
-- [ ] 把 `src/hello_ros_cpp/src/talker.cpp` 里两处 `"..."` 占位符换成真正的内容（第 29、32 行）
+- [x] ~~把 `src/hello_ros_cpp/src/talker.cpp` 里两处 `"..."` 占位符换成真正的内容~~（2026-09-13 已补，跨语言验收通过）
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---

@@ -563,13 +563,19 @@ ros2 run hello_ros_cpp hello_cpp
 
 ```bash
 $ ros2 run hello_ros_cpp talker        # 终端 A（C++）
-[talker_cpp] [INFO] [...] [talker_cpp]: ...1
+[INFO] [1789314339.946876814] [talker_cpp]: 发布：第3次心跳
+[INFO] [1789314340.946733295] [talker_cpp]: 发布：第4次心跳
+[INFO] [1789314341.946632879] [talker_cpp]: 发布：第5次心跳
+
 $ ros2 run hello_ros listener          # 终端 B（Python）
-[listener] [INFO] [...] [listener]: 接收: ...1
+[INFO] [1789314339.951685833] [listener]: 接收: 第3次心跳
+[INFO] [1789314340.947309056] [listener]: 接收: 第4次心跳
+[INFO] [1789314341.947193560] [listener]: 接收: 第5次心跳
 ```
 
-（`...1` 里的 `...` 就是 `talker.cpp` 里还没填的那两个占位符，见文末「待办」。
-重点是：**Python 的 listener 收到了 C++ 发的东西。**）
+注意两边的**时间戳**：`339.946` 发的，`339.951` 就收到了 —— 相差 5 毫秒。
+
+**重点：Python 的 listener 收到了 C++ 的 talker 发的东西。**
 
 **结论**：
 
@@ -982,13 +988,19 @@ C++ 必须有 `main()`，因为编译产物是**可执行文件**，操作系统
 
 ## 附：待办
 
-- [ ] `src/talker.cpp` 里两处 `"..."` 占位符还没换成真正的内容（第 29 行、第 32 行）。
-      预期改成：
-      ```cpp
-      msg.data = "第 " + std::to_string(count_) + " 次心跳";
-      RCLCPP_INFO(this->get_logger(), "发布: %s", msg.data.c_str());
-      ```
-      改完记得 `colcon build --packages-select hello_ros_cpp` 再验证。
+- [x] ~~`src/talker.cpp` 里两处 `"..."` 占位符~~（2026-09-13 已补，实测发 `第 N 次心跳`，跨语言验收通过）
+
+### 留给下节课的小瑕疵
+
+```cpp
+msg.data = "第" + std::to_string(count_)+"次心跳";
+                                    ↑
+```
+
+`+` 两边一边有空格一边没有（同一行里前一个 `+` 是有空格的）。改成 `count_) + "次心跳"` 就齐了。
+
+> 另：日志串用了全角冒号 `发布：`，而 Python 的 `listener` 用的是半角冒号 `接收:`。
+> 两种都能跑，只是两个节点并排看的时候会有点跳。
 
 ---
 

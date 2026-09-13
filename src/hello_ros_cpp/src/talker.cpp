@@ -26,10 +26,10 @@ private:
         count_ += 1;
 
         auto msg = std_msgs::msg::String();
-        msg.data = "..." + std::to_string(count_);              // ⚠️ 待补：换成真正的中文内容
+        msg.data = "第" + std::to_string(count_)+"次心跳";              // ⚠️ 待补：换成真正的中文内容
         pub_->publish(msg);
 
-        RCLCPP_INFO(this->get_logger(), "...%s", msg.data.c_str());   // ⚠️ 待补：同上
+        RCLCPP_INFO(this->get_logger(), "发布：%s", msg.data.c_str());   // ⚠️ 待补：同上
     }
 
     // 成员变量的类型 = 初始化它的那个函数的返回值类型
