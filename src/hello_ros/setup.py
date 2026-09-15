@@ -35,7 +35,8 @@ setup(
             'add_server = hello_ros.add_server:main',
             'add_client = hello_ros.add_client:main',
             'param_talker = hello_ros.param_talker:main',
+            'fib_server = hello_ros.fib_server:main',
+            'fib_client = hello_ros.fib_client:main',
         ],
     },
-
 )

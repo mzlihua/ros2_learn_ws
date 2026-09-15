@@ -53,6 +53,7 @@ ros2_learn_ws/
 │   ├── lesson-02-service.md          第 2 关 · 服务
 │   ├── lesson-03-parameter.md        第 3 关 · 参数
 │   ├── lesson-04-launch.md           第 4 关 · launch 文件
+│   ├── lesson-05-action.md           第 5 关 · 动作
 │   └── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 └── src/
     ├── hello_ros/             ← Python 包（ament_python）
@@ -67,7 +68,9 @@ ros2_learn_ws/
     │       ├── listener.py       订阅者
     │       ├── add_server.py     服务端
     │       ├── add_client.py     客户端
-    │       └── param_talker.py   参数化的发布者
+    │       ├── param_talker.py   参数化的发布者
+    │       ├── fib_server.py     动作服务端（边算边播报 + 支持取消）
+    │       └── fib_client.py     动作客户端（收进度 + 主动叫停）
     └── hello_ros_cpp/         ← C++ 包（ament_cmake）
         ├── package.xml           依赖声明
         ├── CMakeLists.txt        编译与安装规则
@@ -130,7 +133,7 @@ pkill -f "hello_ros"
 | 2 | 服务 Service | ✅ 已完成 | [lesson-02-service.md](docs/lesson-02-service.md) |
 | 3 | 参数 Parameter | ✅ 已完成 | [lesson-03-parameter.md](docs/lesson-03-parameter.md) |
 | 4 | launch 文件 | ✅ 已完成 | [lesson-04-launch.md](docs/lesson-04-launch.md) |
-| 5 | 动作 Action | ⬜ 未开始 | — |
+| 5 | 动作 Action | ✅ 已完成 | [lesson-05-action.md](docs/lesson-05-action.md) |
 | 6 | 自定义消息 `.msg` / `.srv` | ⬜ 未开始 | — |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
@@ -155,6 +158,8 @@ pkill -f "hello_ros"
 | `add_server` | [add_server.py](src/hello_ros/hello_ros/add_server.py) | 服务端，提供 `add_two_ints` 加法服务 | `ros2 service call /add_two_ints example_interfaces/srv/AddTwoInts "{a: 3, b: 4}"` |
 | `add_client` | [add_client.py](src/hello_ros/hello_ros/add_client.py) | 客户端，调用加法服务 | 先跑 `add_server` 再跑它 |
 | `param_talker` | [param_talker.py](src/hello_ros/hello_ros/param_talker.py) | 参数化发布者，发什么/多快/几条都能改 | `ros2 param set /param_talker message 世界` |
+| `fib_server` | [fib_server.py](src/hello_ros/hello_ros/fib_server.py) | 动作服务端，算斐波那契，每秒播报一次进度，可中途取消 | `ros2 action send_goal /fibonacci example_interfaces/action/Fibonacci "{order: 8}" --feedback` |
+| `fib_client` | [fib_client.py](src/hello_ros/hello_ros/fib_client.py) | 动作客户端，收进度并在第 3 条时主动叫停 | 先跑 `fib_server` 再跑它 |
 
 ### launch 文件
 
@@ -194,6 +199,14 @@ ros2 run hello_ros add_client   # 终端 B → 打印 3 + 4 = 7
 ros2 run hello_ros param_talker --ros-args -p message:=你好 -p period:=0.5   # 终端 A
 ros2 param set /param_talker message 世界                                    # 终端 B
 
+# 动作：两个终端（服务端要加 MultiThreadedExecutor，否则取消请求进不来，见笔记 §2.5）
+ros2 run hello_ros fib_server   # 终端 A
+ros2 run hello_ros fib_client   # 终端 B → 收 3 条进度后主动叫停，状态 5 = CANCELED
+
+# 动作：不用写客户端，直接用 CLI 发目标并看进度
+ros2 run hello_ros fib_server   # 终端 A
+ros2 action send_goal /fibonacci example_interfaces/action/Fibonacci "{order: 8}" --feedback   # 终端 B（Ctrl-C 可取消）
+
 # launch：一条命令起两个节点
 ros2 launch hello_ros demo.launch.py period:=0.5 message:=你好
 
@@ -214,6 +227,7 @@ ros2 run hello_ros listener     # 终端 B（Python）
 | [第 2 关 · 服务](docs/lesson-02-service.md) | 请求/响应、`request`/`response` 的"盒子 vs 字段"、`future`、隐藏节点机制、服务端不可用的两种情况、服务回调串行 |
 | [第 3 关 · 参数](docs/lesson-03-parameter.md) | `declare` 注册 vs `get` 读取、参数改了谁自动跟上（现读 vs 焊死）、校验回调的三个必答点、只读参数、节点自带参数、启动 `-p` 绕过回调 |
 | [第 4 关 · launch](docs/lesson-04-launch.md) | launch 文件是 Python 脚本不是配置文件、`Node` 同名不同物、`DeclareLaunchArgument`/`LaunchConfiguration`、`data_files` 的二元组、`--symlink-install` 到底免掉什么、**绿灯 ≠ 做了你想做的事** |
+| [第 5 关 · 动作](docs/lesson-05-action.md) | 动作 = 3 服务 + 2 话题拼出来的、Goal/Feedback/Result 三段式、**服务端 handle "宣布" vs 客户端 handle "请求"**、执行器那一层决定取消能不能生效、回调式客户端的三个钩子、两处"信封→盒子"、checkpoint 位置决定语义 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 
 > 📖 复习建议：第 7 节「实测现象与结论」和第 9 节「自测题」是重点。自测题答案默认折叠，**先自己答一遍再点开**。
@@ -293,8 +307,9 @@ colcon test-result --verbose                            # ② 查看（不执行
 - [x] ~~`package.xml` 的 `<description>` / `<license>` 占位~~（2026-09-12 已补：Apache-2.0）
 - [x] ~~清理源码里练习时的 `# TODO n：...` 注释~~（2026-09-12 已清）
 - [x] ~~把 `src/hello_ros_cpp/src/talker.cpp` 里两处 `"..."` 占位符换成真正的内容~~（2026-09-13 已补，跨语言验收通过）
+- [x] ~~清理 `fib_server.py` / `fib_client.py` 里练习时的 `# TODO n：...` 注释~~（2026-09-15 已清，`colcon test` 全绿）
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～4 关已完成，下一关是「动作 Action」。C++ 支线已起步（第 1 关进行中）。**
+**当前进度：第 1～5 关已完成，下一关是「自定义消息 `.msg` / `.srv`」。C++ 支线已起步（第 1 关进行中）。**
