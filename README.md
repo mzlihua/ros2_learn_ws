@@ -54,6 +54,7 @@ ros2_learn_ws/
 │   ├── lesson-03-parameter.md        第 3 关 · 参数
 │   ├── lesson-04-launch.md           第 4 关 · launch 文件
 │   ├── lesson-05-action.md           第 5 关 · 动作
+│   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   └── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 └── src/
     ├── hello_ros/             ← Python 包（ament_python）
@@ -219,7 +220,9 @@ ros2 run hello_ros listener     # 终端 B（Python）
 
 ## 学习笔记
 
-每关一份，结构固定：**目标 → 核心概念 → 完整代码 → API 速查 → CLI 速查 → 构建运行 → 实测现象 → 踩坑记录 → 自测题**。
+**关卡笔记**每关一份，结构固定：**目标 → 核心概念 → 完整代码 → API 速查 → CLI 速查 → 构建运行 → 实测现象 → 踩坑记录 → 自测题**。
+
+**专项笔记**（`skill-NN-*`）是方法课，不占关卡编号：**为什么有这一课 → 核心概念 → 方法 → 实战训练 → 工具速查 → 踩坑 → 自测题**。
 
 | 笔记 | 主要内容 |
 |---|---|
@@ -228,6 +231,7 @@ ros2 run hello_ros listener     # 终端 B（Python）
 | [第 3 关 · 参数](docs/lesson-03-parameter.md) | `declare` 注册 vs `get` 读取、参数改了谁自动跟上（现读 vs 焊死）、校验回调的三个必答点、只读参数、节点自带参数、启动 `-p` 绕过回调 |
 | [第 4 关 · launch](docs/lesson-04-launch.md) | launch 文件是 Python 脚本不是配置文件、`Node` 同名不同物、`DeclareLaunchArgument`/`LaunchConfiguration`、`data_files` 的二元组、`--symlink-install` 到底免掉什么、**绿灯 ≠ 做了你想做的事** |
 | [第 5 关 · 动作](docs/lesson-05-action.md) | 动作 = 3 服务 + 2 话题拼出来的、Goal/Feedback/Result 三段式、**服务端 handle "宣布" vs 客户端 handle "请求"**、执行器那一层决定取消能不能生效、回调式客户端的三个钩子、两处"信封→盒子"、checkpoint 位置决定语义 |
+| [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 
 > 📖 复习建议：第 7 节「实测现象与结论」和第 9 节「自测题」是重点。自测题答案默认折叠，**先自己答一遍再点开**。
