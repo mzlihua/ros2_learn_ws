@@ -28,7 +28,7 @@
 | C++ | g++ 15.2（C++20） |
 | CMake | 4.2.3 |
 | 构建工具 | `colcon` |
-| 包 | `hello_ros`（`ament_python`）、`hello_ros_cpp`（`ament_cmake`） |
+| 包 | `hello_ros`（`ament_python`）、`hello_ros_cpp`（`ament_cmake`）、`hello_ros_interfaces`（`ament_cmake`，自定义消息） |
 
 ⚠️ **每个新开的终端都要 source**：
 
@@ -54,6 +54,7 @@ ros2_learn_ws/
 │   ├── lesson-03-parameter.md        第 3 关 · 参数
 │   ├── lesson-04-launch.md           第 4 关 · launch 文件
 │   ├── lesson-05-action.md           第 5 关 · 动作
+│   ├── lesson-06-custom-message.md   第 6 关 · 自定义消息
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   └── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 └── src/
@@ -71,7 +72,18 @@ ros2_learn_ws/
     │       ├── add_client.py     客户端
     │       ├── param_talker.py   参数化的发布者
     │       ├── fib_server.py     动作服务端（边算边播报 + 支持取消）
-    │       └── fib_client.py     动作客户端（收进度 + 主动叫停）
+    │       ├── fib_client.py     动作客户端（收进度 + 主动叫停）
+    │       ├── status_talker.py  发布自定义消息 RobotStatus
+    │       ├── status_listener.py 订阅自定义消息 RobotStatus
+    │       ├── mode_server.py    提供自定义服务 SetMode
+    │       └── mode_client.py    调用自定义服务 SetMode
+    ├── hello_ros_interfaces/  ← 接口包（ament_cmake）· 只定义合同，不含逻辑
+    │   ├── package.xml           依赖声明
+    │   ├── CMakeLists.txt        rosidl_generate_interfaces 登记表
+    │   ├── msg/
+    │   │   └── RobotStatus.msg       话题合同：机器人状态
+    │   └── srv/
+    │       └── SetMode.srv           服务合同：切换模式
     └── hello_ros_cpp/         ← C++ 包（ament_cmake）
         ├── package.xml           依赖声明
         ├── CMakeLists.txt        编译与安装规则
@@ -79,6 +91,10 @@ ros2_learn_ws/
             ├── hello_cpp.cpp     最小节点：定时打印（C++ 版）
             └── talker.cpp        发布者（C++ 版）
 ```
+
+> 💡 **接口为什么要单独一个包？** 它只定义**合同**，不含逻辑。`hello_ros`（Python）和
+> `hello_ros_cpp`（C++）都依赖它 —— **合同不该归属于任何一方**。详见
+> [lesson-06 §2.5](docs/lesson-06-custom-message.md)。
 
 构建产物 `build/` `install/` `log/` 已在 `.gitignore` 里，不会进版本库。
 
@@ -90,13 +106,18 @@ ros2_learn_ws/
 
 ```bash
 cd ~/ros2_learn_ws
-colcon build --symlink-install      # 两个包一起
+colcon build --symlink-install      # 三个包一起
 source install/setup.bash
 
 # 只想编一个包
+colcon build --packages-select hello_ros_interfaces             # 接口包（自定义消息）
 colcon build --packages-select hello_ros --symlink-install      # Python 包
 colcon build --packages-select hello_ros_cpp                    # C++ 包
 ```
+
+> ⚠️ **`hello_ros` 依赖 `hello_ros_interfaces`。** 接口包没 build 过就单独编 `hello_ros`，
+> 会在 `import` 时报 `No module named 'hello_ros_interfaces'` —— 而且 **build 本身是绿灯的**
+> （"构建成功"和"能用"是两件事）。见 [lesson-06 §8 坑 7](docs/lesson-06-custom-message.md)。
 
 > **`--symlink-install` 是什么？** 让 `install/` 里放软链接指回 `src/`，这样**只改 `.py` / launch 文件的内容时不用重新 build**。
 >
@@ -135,7 +156,7 @@ pkill -f "hello_ros"
 | 3 | 参数 Parameter | ✅ 已完成 | [lesson-03-parameter.md](docs/lesson-03-parameter.md) |
 | 4 | launch 文件 | ✅ 已完成 | [lesson-04-launch.md](docs/lesson-04-launch.md) |
 | 5 | 动作 Action | ✅ 已完成 | [lesson-05-action.md](docs/lesson-05-action.md) |
-| 6 | 自定义消息 `.msg` / `.srv` | ⬜ 未开始 | — |
+| 6 | 自定义消息 `.msg` / `.srv` | ✅ 已完成 | [lesson-06-custom-message.md](docs/lesson-06-custom-message.md) |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -161,6 +182,22 @@ pkill -f "hello_ros"
 | `param_talker` | [param_talker.py](src/hello_ros/hello_ros/param_talker.py) | 参数化发布者，发什么/多快/几条都能改 | `ros2 param set /param_talker message 世界` |
 | `fib_server` | [fib_server.py](src/hello_ros/hello_ros/fib_server.py) | 动作服务端，算斐波那契，每秒播报一次进度，可中途取消 | `ros2 action send_goal /fibonacci example_interfaces/action/Fibonacci "{order: 8}" --feedback` |
 | `fib_client` | [fib_client.py](src/hello_ros/hello_ros/fib_client.py) | 动作客户端，收进度并在第 3 条时主动叫停 | 先跑 `fib_server` 再跑它 |
+| `status_talker` | [status_talker.py](src/hello_ros/hello_ros/status_talker.py) | 发布自定义消息 `RobotStatus` 到 `/robot_status` | `ros2 topic echo /robot_status` |
+| `status_listener` | [status_listener.py](src/hello_ros/hello_ros/status_listener.py) | 订阅 `/robot_status` 并打印各字段 | 先跑 `status_talker` 再跑它 |
+| `mode_server` | [mode_server.py](src/hello_ros/hello_ros/mode_server.py) | 服务端，提供自定义服务 `set_mode`（只接受 0/1/2） | `ros2 service call /set_mode hello_ros_interfaces/srv/SetMode "{mode: 5}"` |
+| `mode_client` | [mode_client.py](src/hello_ros/hello_ros/mode_client.py) | 客户端，调用 `set_mode` 并打印响应两个字段 | 先跑 `mode_server` 再跑它 |
+
+### 接口包 `hello_ros_interfaces`
+
+**不是节点，是合同。** 只定义 `.msg` / `.srv`，代码全部由 `rosidl` 生成。
+
+| 接口 | 内容 | 查看命令 |
+|---|---|---|
+| [RobotStatus.msg](src/hello_ros_interfaces/msg/RobotStatus.msg) | `string robot_name` / `float32 battery` / `int32 mode` / `bool emergency` / `geometry_msgs/Point position`（**嵌套**） | `ros2 interface show hello_ros_interfaces/msg/RobotStatus` |
+| [SetMode.srv](src/hello_ros_interfaces/srv/SetMode.srv) | 请求 `int32 mode` ／ 响应 `bool success` + `string message` | `ros2 interface show hello_ros_interfaces/srv/SetMode` |
+
+> 💡 改了 `.msg` / `.srv` **必须重新 build**（`--symlink-install` 免不掉 —— 它要**生成代码**）。
+> 这跟 `.py` 相反（`.py` 走软链，改完只要重启节点）。
 
 ### launch 文件
 
@@ -214,6 +251,19 @@ ros2 launch hello_ros demo.launch.py period:=0.5 message:=你好
 # 跨语言互操作：C++ 发，Python 收（能通，只跟话题名和消息类型有关）
 ros2 run hello_ros_cpp talker   # 终端 A（C++）
 ros2 run hello_ros listener     # 终端 B（Python）
+
+# 自定义消息：两个终端
+ros2 run hello_ros status_talker     # 终端 A
+ros2 run hello_ros status_listener   # 终端 B → 收到 r2d2 电量=85.0 mode=0 x=3.0
+
+# 自定义服务：两个终端
+ros2 run hello_ros mode_server                                          # 终端 A
+ros2 run hello_ros mode_client                                          # 终端 B → mode=2，success=True
+ros2 service call /set_mode hello_ros_interfaces/srv/SetMode "{mode: 5}"  # 越界 → success=False
+
+# 接口本身（不需要任何节点）
+ros2 interface package hello_ros_interfaces
+ros2 interface show hello_ros_interfaces/srv/SetMode
 ```
 
 ---
@@ -231,6 +281,7 @@ ros2 run hello_ros listener     # 终端 B（Python）
 | [第 3 关 · 参数](docs/lesson-03-parameter.md) | `declare` 注册 vs `get` 读取、参数改了谁自动跟上（现读 vs 焊死）、校验回调的三个必答点、只读参数、节点自带参数、启动 `-p` 绕过回调 |
 | [第 4 关 · launch](docs/lesson-04-launch.md) | launch 文件是 Python 脚本不是配置文件、`Node` 同名不同物、`DeclareLaunchArgument`/`LaunchConfiguration`、`data_files` 的二元组、`--symlink-install` 到底免掉什么、**绿灯 ≠ 做了你想做的事** |
 | [第 5 关 · 动作](docs/lesson-05-action.md) | 动作 = 3 服务 + 2 话题拼出来的、Goal/Feedback/Result 三段式、**服务端 handle "宣布" vs 客户端 handle "请求"**、执行器那一层决定取消能不能生效、回调式客户端的三个钩子、两处"信封→盒子"、checkpoint 位置决定语义 |
+| [第 6 关 · 自定义消息](docs/lesson-06-custom-message.md) | **`.msg` 是合同不是代码**（5 行文本 → Python/C++/IDL/JSON 四种产物）、**三张登记表**（文件在磁盘上 ≠ 被注册了）、`.srv` 的 `---` 必须只有三个减号、嵌套消息的两处 `DEPENDENCIES`、接口为什么单独一个包、**静默 bug #4：`if x == 0 or 1 or 2` 恒真**、改了 `.py` 不重启节点 = 白改 |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 
@@ -282,6 +333,9 @@ colcon test-result --verbose                            # ② 查看（不执行
 **C++ 包 `hello_ros_cpp`**：`cppcheck` / `lint_cmake` 通过；`cpplint`、`copyright`、`uncrustify` **有意关闭**；
 `xmllint` **当前失败**（⚠️ 网络环境问题，跟代码无关，见下）
 
+**接口包 `hello_ros_interfaces`**：`lint_cmake` 通过；`xmllint` **当前失败**（⚠️ 同一个网络问题，
+它是 `ament_cmake` 包，走 ctest，默认 60 秒超时 —— 和 `hello_ros_cpp` 一模一样）
+
 > ⚠️ **`xmllint` 在这台机器上会因为网络问题失败**，跟代码无关。原因已查明：
 >
 > 1. `ament_xmllint` 每次运行都要从 `download.ros.org` 下 XSD 校验文件
@@ -312,8 +366,13 @@ colcon test-result --verbose                            # ② 查看（不执行
 - [x] ~~清理源码里练习时的 `# TODO n：...` 注释~~（2026-09-12 已清）
 - [x] ~~把 `src/hello_ros_cpp/src/talker.cpp` 里两处 `"..."` 占位符换成真正的内容~~（2026-09-13 已补，跨语言验收通过）
 - [x] ~~清理 `fib_server.py` / `fib_client.py` 里练习时的 `# TODO n：...` 注释~~（2026-09-15 已清，`colcon test` 全绿）
+- [x] ~~给 `hello_ros_interfaces/package.xml` 补 `<description>`~~（2026-09-16 已补）
+- [x] ~~清理第 6 关 4 个节点的 `# TODO n：...` 注释 + 5 处 flake8 风格问题~~（2026-09-16 已清，`flake8` / `pep257` / `mypy` 全过）
+- [ ] （可选）**C++ 节点用这个接口** —— `hello_ros_cpp` 里写一个订阅 `robot_status` 的节点，
+      让 Python 发、C++ 收，把"契约跨语言"真正跑通（第 6 关的收尾大戏，也是 C++ 支线的下一站）
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～5 关已完成，下一关是「自定义消息 `.msg` / `.srv`」。C++ 支线已起步（第 1 关进行中）。**
+**当前进度：第 1～6 关全部完成 —— Python 主线的六关核心基础已走完一轮。**
+**下一步（可选）：把自定义接口接到 C++ 支线上（Python 发、C++ 收），以及 C++ 支线本身的推进。**

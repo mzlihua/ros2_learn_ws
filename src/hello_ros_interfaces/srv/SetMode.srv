@@ -1,0 +1,6 @@
+int32 mode
+
+---
+
+bool success
+string message

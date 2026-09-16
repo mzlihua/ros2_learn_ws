@@ -37,6 +37,13 @@ setup(
             'param_talker = hello_ros.param_talker:main',
             'fib_server = hello_ros.fib_server:main',
             'fib_client = hello_ros.fib_client:main',
+
+            'status_talker = hello_ros.status_talker:main',
+            'status_listener = hello_ros.status_listener:main',
+
+            'mode_server = hello_ros.mode_server:main',
+            'mode_client = hello_ros.mode_client:main',
+
         ],
     },
 )
