@@ -55,6 +55,7 @@ ros2_learn_ws/
 │   ├── lesson-04-launch.md           第 4 关 · launch 文件
 │   ├── lesson-05-action.md           第 5 关 · 动作
 │   ├── lesson-06-custom-message.md   第 6 关 · 自定义消息
+│   ├── lesson-07-executor.md         第 7 关 · 执行器与回调组
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   └── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 └── src/
@@ -158,7 +159,7 @@ pkill -f "hello_ros"
 | 4 | launch 文件 | ✅ 已完成 | [lesson-04-launch.md](docs/lesson-04-launch.md) |
 | 5 | 动作 Action | ✅ 已完成 | [lesson-05-action.md](docs/lesson-05-action.md) |
 | 6 | 自定义消息 `.msg` / `.srv` | ✅ 已完成 | [lesson-06-custom-message.md](docs/lesson-06-custom-message.md) |
-| 7 | 执行器与回调组 | 🚧 代码已跑通，笔记待写 | （待写 `lesson-07-executor.md`） |
+| 7 | 执行器与回调组 | ✅ 已完成 | [lesson-07-executor.md](docs/lesson-07-executor.md) |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -289,6 +290,7 @@ ros2 interface show hello_ros_interfaces/srv/SetMode
 | [第 4 关 · launch](docs/lesson-04-launch.md) | launch 文件是 Python 脚本不是配置文件、`Node` 同名不同物、`DeclareLaunchArgument`/`LaunchConfiguration`、`data_files` 的二元组、`--symlink-install` 到底免掉什么、**绿灯 ≠ 做了你想做的事** |
 | [第 5 关 · 动作](docs/lesson-05-action.md) | 动作 = 3 服务 + 2 话题拼出来的、Goal/Feedback/Result 三段式、**服务端 handle "宣布" vs 客户端 handle "请求"**、执行器那一层决定取消能不能生效、回调式客户端的三个钩子、两处"信封→盒子"、checkpoint 位置决定语义 |
 | [第 6 关 · 自定义消息](docs/lesson-06-custom-message.md) | **`.msg` 是合同不是代码**（5 行文本 → Python/C++/IDL/JSON 四种产物）、**三张登记表**（文件在磁盘上 ≠ 被注册了）、`.srv` 的 `---` 必须只有三个减号、嵌套消息的两处 `DEPENDENCIES`、接口为什么单独一个包、**静默 bug #4：`if x == 0 or 1 or 2` 恒真**、改了 `.py` 不重启节点 = 白改 |
+| [第 7 关 · 执行器与回调组](docs/lesson-07-executor.md) | **执行器决定"有几只手"，回调组决定"第二只手能不能拿同一把锁"**、默认组 = 全局串行、**⭐ `execute_callback` 是裸任务不挂任何回调组**（源码 `server.py:686`）、**订正第 5 关**的 2×2 矩阵、三路对照表、**可重入组是"允许重叠"不是"允许并行"**、定时器不排队（错过的拍子丢掉）、日志时间戳是 Unix 纪元秒 |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 
@@ -375,15 +377,14 @@ colcon test-result --verbose                            # ② 查看（不执行
 - [x] ~~清理 `fib_server.py` / `fib_client.py` 里练习时的 `# TODO n：...` 注释~~（2026-09-15 已清，`colcon test` 全绿）
 - [x] ~~给 `hello_ros_interfaces/package.xml` 补 `<description>`~~（2026-09-16 已补）
 - [x] ~~清理第 6 关 4 个节点的 `# TODO n：...` 注释 + 5 处 flake8 风格问题~~（2026-09-16 已清，`flake8` / `pep257` / `mypy` 全过）
-- [ ] **写 `docs/lesson-07-executor.md`** —— 第 7 关的笔记还差这一份，按上面「学习笔记」那节的固定结构写。
-      素材已在手：**三路对照表和"两个决定"** 见 [group_demo.py](src/hello_ros/hello_ros/group_demo.py) 顶部注释；
-      **踩坑记录**这一关攒了四条 —— 敲错命令名（`fid_server`）、回调体是空的、
-      没起发布者导致回调从没被触发、残留进程污染实验（见「清理残留进程」）
+- [x] ~~写 `docs/lesson-07-executor.md`~~（2026-09-17 已写，10 节完整结构 + 6 道自测题）。
+      素材来源：三路对照表和"两个决定"脱胎于 [group_demo.py](src/hello_ros/hello_ros/group_demo.py) 顶部注释；
+      踩坑记录四条为 ① 敲错命令名 `fid_server` ② `cb_slow` 函数体是空的 ③ 没起发布者导致回调从没被触发 ④ 残留进程污染实验
 - [ ] （可选）**C++ 节点用这个接口** —— `hello_ros_cpp` 里写一个订阅 `robot_status` 的节点，
       让 Python 发、C++ 收，把"契约跨语言"真正跑通（第 6 关的收尾大戏，也是 C++ 支线的下一站）
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～6 关全部完成；第 7 关「执行器与回调组」代码与实测已走完，笔记待写。**
-**下一步：① 补 `docs/lesson-07-executor.md`（第 7 关收尾）；②（可选）把自定义接口接到 C++ 支线上（Python 发、C++ 收）。**
+**当前进度：第 1～7 关全部完成 —— 核心基础的七关走完一轮。**
+**下一步：①（可选）把自定义接口接到 C++ 支线上（Python 发、C++ 收）；②（可选）写 C++ 版 listener；③ 第 7 关 §9.2 的 5 道加练题。**
