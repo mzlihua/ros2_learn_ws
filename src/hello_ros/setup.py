@@ -44,6 +44,8 @@ setup(
             'mode_server = hello_ros.mode_server:main',
             'mode_client = hello_ros.mode_client:main',
 
+            'group_demo = hello_ros.group_demo:main',
+
         ],
     },
 )

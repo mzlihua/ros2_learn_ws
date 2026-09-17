@@ -76,7 +76,8 @@ ros2_learn_ws/
     │       ├── status_talker.py  发布自定义消息 RobotStatus
     │       ├── status_listener.py 订阅自定义消息 RobotStatus
     │       ├── mode_server.py    提供自定义服务 SetMode
-    │       └── mode_client.py    调用自定义服务 SetMode
+    │       ├── mode_client.py    调用自定义服务 SetMode
+    │       └── group_demo.py     执行器与回调组实验（慢订阅者 + 定时器争"锁"）
     ├── hello_ros_interfaces/  ← 接口包（ament_cmake）· 只定义合同，不含逻辑
     │   ├── package.xml           依赖声明
     │   ├── CMakeLists.txt        rosidl_generate_interfaces 登记表
@@ -157,6 +158,7 @@ pkill -f "hello_ros"
 | 4 | launch 文件 | ✅ 已完成 | [lesson-04-launch.md](docs/lesson-04-launch.md) |
 | 5 | 动作 Action | ✅ 已完成 | [lesson-05-action.md](docs/lesson-05-action.md) |
 | 6 | 自定义消息 `.msg` / `.srv` | ✅ 已完成 | [lesson-06-custom-message.md](docs/lesson-06-custom-message.md) |
+| 7 | 执行器与回调组 | 🚧 代码已跑通，笔记待写 | （待写 `lesson-07-executor.md`） |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -186,6 +188,7 @@ pkill -f "hello_ros"
 | `status_listener` | [status_listener.py](src/hello_ros/hello_ros/status_listener.py) | 订阅 `/robot_status` 并打印各字段 | 先跑 `status_talker` 再跑它 |
 | `mode_server` | [mode_server.py](src/hello_ros/hello_ros/mode_server.py) | 服务端，提供自定义服务 `set_mode`（只接受 0/1/2） | `ros2 service call /set_mode hello_ros_interfaces/srv/SetMode "{mode: 5}"` |
 | `mode_client` | [mode_client.py](src/hello_ros/hello_ros/mode_client.py) | 客户端，调用 `set_mode` 并打印响应两个字段 | 先跑 `mode_server` 再跑它 |
+| `group_demo` | [group_demo.py](src/hello_ros/hello_ros/group_demo.py) | **实验节点**：一个睡 2 秒的慢订阅者 + 一个 0.5 秒定时器，用来观察回调组怎么分配"锁" | `ros2 run hello_ros group_demo`（另开终端再跑 `talker` 触发慢回调） |
 
 ### 接口包 `hello_ros_interfaces`
 
@@ -261,6 +264,10 @@ ros2 run hello_ros mode_server                                          # 终端
 ros2 run hello_ros mode_client                                          # 终端 B → mode=2，success=True
 ros2 service call /set_mode hello_ros_interfaces/srv/SetMode "{mode: 5}"  # 越界 → success=False
 
+# 执行器与回调组：两个终端（先起 group_demo，再起 talker 触发慢回调）
+ros2 run hello_ros group_demo   # 终端 A
+ros2 run hello_ros talker       # 终端 B → 慢回调睡 2 秒，看定时器有没有被挡住
+
 # 接口本身（不需要任何节点）
 ros2 interface package hello_ros_interfaces
 ros2 interface show hello_ros_interfaces/srv/SetMode
@@ -285,7 +292,7 @@ ros2 interface show hello_ros_interfaces/srv/SetMode
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 
-> 📖 复习建议：第 7 节「实测现象与结论」和第 9 节「自测题」是重点。自测题答案默认折叠，**先自己答一遍再点开**。
+> 📖 复习建议：每份笔记的 **§7「实测现象与结论」** 和 **§9「自测题」** 是重点。自测题答案默认折叠，**先自己答一遍再点开**。
 
 ---
 
@@ -368,11 +375,15 @@ colcon test-result --verbose                            # ② 查看（不执行
 - [x] ~~清理 `fib_server.py` / `fib_client.py` 里练习时的 `# TODO n：...` 注释~~（2026-09-15 已清，`colcon test` 全绿）
 - [x] ~~给 `hello_ros_interfaces/package.xml` 补 `<description>`~~（2026-09-16 已补）
 - [x] ~~清理第 6 关 4 个节点的 `# TODO n：...` 注释 + 5 处 flake8 风格问题~~（2026-09-16 已清，`flake8` / `pep257` / `mypy` 全过）
+- [ ] **写 `docs/lesson-07-executor.md`** —— 第 7 关的笔记还差这一份，按上面「学习笔记」那节的固定结构写。
+      素材已在手：**三路对照表和"两个决定"** 见 [group_demo.py](src/hello_ros/hello_ros/group_demo.py) 顶部注释；
+      **踩坑记录**这一关攒了四条 —— 敲错命令名（`fid_server`）、回调体是空的、
+      没起发布者导致回调从没被触发、残留进程污染实验（见「清理残留进程」）
 - [ ] （可选）**C++ 节点用这个接口** —— `hello_ros_cpp` 里写一个订阅 `robot_status` 的节点，
       让 Python 发、C++ 收，把"契约跨语言"真正跑通（第 6 关的收尾大戏，也是 C++ 支线的下一站）
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～6 关全部完成 —— Python 主线的六关核心基础已走完一轮。**
-**下一步（可选）：把自定义接口接到 C++ 支线上（Python 发、C++ 收），以及 C++ 支线本身的推进。**
+**当前进度：第 1～6 关全部完成；第 7 关「执行器与回调组」代码与实测已走完，笔记待写。**
+**下一步：① 补 `docs/lesson-07-executor.md`（第 7 关收尾）；②（可选）把自定义接口接到 C++ 支线上（Python 发、C++ 收）。**
