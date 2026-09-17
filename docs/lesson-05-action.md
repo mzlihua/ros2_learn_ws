@@ -161,12 +161,35 @@ def execute_callback(self, goal_handle):
 
 所以**取消请求会卡在门外**：它到了进程里，但执行器正卡在 `time.sleep` 里，腾不出手去处理 `cancel_goal` 这个服务请求。
 
-**修法（两个都要改）：**
+**修法：**
 
 | 改动 | 解决什么 |
 |---|---|
 | `MultiThreadedExecutor` | 给节点**多个线程** → "睡觉的 `execute_callback`" 和"刚到的取消请求"能**同时**跑 |
-| `ReentrantCallbackGroup` | 默认的回调组是**互斥**的（同组内一个在跑，别的排队）。光有线程还不够，得**允许它们并发** |
+
+> ⚠️ **订正（2026-09-17，第 7 关实测）** —— 这上面原来还列着第二条 `ReentrantCallbackGroup`，**那是错的，已删。**
+>
+> 第 5 关当时把**两处一起**改了，看到取消生效就以为两个都必需。
+> **两处一起改 = 功劳平分，分不清哪个才是必要的。** 这就是"一次只改一个变量"的代价。
+>
+> 第 7 关补了完整的 2×2 矩阵：
+>
+> | 执行器 | 回调组 | `收到取消请求` | 进度条数 | 最终状态 | 耗时 |
+> |---|---|---|---|---|---|
+> | 单线程 | 默认 | ❌ | 29 | 4 | 30 秒 |
+> | 单线程 | `Reentrant` | ❌ | 29 | 4 | 30 秒 |
+> | 多线程 | 默认 | ✅ | 3 | 5 | 3.3 秒 |
+> | 多线程 | `Reentrant` | ✅ | 3 | 5 | ~4 秒 |
+>
+> **上两行一字不差，下两行一字不差 —— 回调组在这里完全没参与。真正的开关只有线程数。**
+>
+> 原因在 rclpy 源码里，`rclpy/action/server.py`：
+> - 第 **686** 行 `executor.create_task(self._execute_goal, ...)` → `execute_callback` 是当**裸任务**跑的，**不挂在任何回调组上**
+> - 第 **379** 行 `callback_group.add_entity(self)` → 挂到回调组上的是 **ActionServer 这个整体**，不是 `execute_callback`
+>
+> 互斥组保护的那把锁，`execute_callback` **根本不去拿**。没人争锁，"互斥"和"可重入"自然没区别。
+>
+> **回调组真正管用的场合是"两个正经回调"（订阅 / 定时器 / 服务）抢同一把锁的时候** —— 见第 7 关笔记（执行器与回调组）。
 
 > **关键理解：`time.sleep(1)` 一个字没改。变的是"它堵住了谁"。**
 >
@@ -206,7 +229,7 @@ class FibServer(Node):
             'fibonacci',
             execute_callback=self.execute_callback,
             cancel_callback=self.cancel_callback,
-            callback_group=ReentrantCallbackGroup())
+            callback_group=ReentrantCallbackGroup())   # ⚠️ 实测多余，见 §2.5 订正框
 
     def execute_callback(self, goal_handle):
         """算出 order 项斐波那契，每算一项播报一次."""
@@ -375,9 +398,9 @@ goal_handle.get_result_async()                       # → future，结果是带
 goal_handle.cancel_goal_async()                      # 请求取消
 
 # ---------- 执行器（取消能不能生效的关键） ----------
-ReentrantCallbackGroup()                             # 允许同组回调并发
-MultiThreadedExecutor()                              # 多线程执行器
+MultiThreadedExecutor()                              # 多线程执行器 ← 取消生效只靠这一个
 rclpy.spin(node, executor=MultiThreadedExecutor())
+ReentrantCallbackGroup()                             # 允许同组回调并发（action 用不上，见 §2.5 订正框）
 
 # ---------- 状态码 ----------
 #   4 = STATUS_SUCCEEDED   5 = STATUS_CANCELED   6 = STATUS_ABORTED
@@ -515,7 +538,7 @@ $ ros2 topic list --include-hidden-topics
 
 **取消请求压根没到过服务端。全程没有一行报错。**
 
-**B. 多线程 + ReentrantCallbackGroup**
+**B. 多线程**（当时还顺手加了 `ReentrantCallbackGroup`；第 7 关实测证明**起作用的是多线程，回调组没参与**，见 §2.5 订正框）
 
 ```
 收到取消请求: 1 次
@@ -826,18 +849,21 @@ ros2 topic list --include-hidden-topics
 </details>
 
 <details>
-<summary><b>题 3：为什么取消功能"写对了"却不生效？改哪两处？</b></summary>
+<summary><b>题 3：为什么取消功能"写对了"却不生效？改哪一处？</b></summary>
 
 因为默认的 `rclpy.spin(node)` 是**单线程**执行器。`execute_callback` 里的 `time.sleep(1)` 把唯一那个线程堵死了，**取消请求卡在门外进不来**——`cancel_callback` 根本不会被调用，`is_cancel_requested` 永远是 `False`。全程不报错。
 
-改两处：
+只改一处：
 
 ```python
-callback_group=ReentrantCallbackGroup()              # ① 允许同组回调并发
-rclpy.spin(node, executor=MultiThreadedExecutor())   # ② 多线程执行器
+rclpy.spin(node, executor=MultiThreadedExecutor())   # 多线程执行器
 ```
 
 实测对比：单线程 `收到取消请求` **0 次**；多线程 **1 次，2 毫秒响应**。
+
+> ⚠️ **订正（2026-09-17，第 7 关实测）**：这题原答案写的是"改两处"，把
+> `callback_group=ReentrantCallbackGroup()` 也算进去了。**那是错的** —— 单线程下加不加回调组，
+> 结果一字不差。原因见 §2.5 的订正框。
 
 **关键：`time.sleep(1)` 一个字没改。变的是"它堵住了谁"。**
 </details>
@@ -917,7 +943,7 @@ client.wait_for_service(timeout_sec=1.0)       # 1 秒等不到就返回 False�
 ### 9.2 留给下次的思考题（无答案）
 
 1. **`cancel_callback` 返回 `CancelResponse.REJECT` 会怎样？** 客户端那边能看出区别吗？写个实验验证一下。
-2. **如果两个客户端同时发目标**（`order=10` 和 `order=20`），现在的服务端会怎么表现？**为什么**？（提示：想想 `ReentrantCallbackGroup` 到底允许了什么，以及 `feedback_msg` 是哪个函数里的局部变量。）
+2. **如果两个客户端同时发目标**（`order=10` 和 `order=20`），现在的服务端会怎么表现？**为什么**？（提示：`feedback_msg` 是哪个函数里的局部变量？）
 3. **`MultiThreadedExecutor` 加了线程，那"共享变量"会不会出问题？** 现在这份代码里，两个目标同时跑会互相踩到谁吗？
 4. **`goal_handle.status`（两边都有那个）和 `future.result().status` 是同一个东西吗？** 分别是什么时候的值？
 5. **客户端的 `cancel_goal_async()` 返回的是 future**，它的结果里有什么？（`dir()` 一下 `CancelGoalServiceResponse`。）现在代码里没接它，**不接会有什么后果？**

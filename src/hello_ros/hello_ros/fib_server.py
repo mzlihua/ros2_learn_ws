@@ -4,7 +4,6 @@ from example_interfaces.action import Fibonacci
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse
-from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
@@ -19,8 +18,7 @@ class FibServer(Node):
             Fibonacci,
             'fibonacci',
             execute_callback=self.execute_callback,
-            cancel_callback=self.cancel_callback,
-            callback_group=ReentrantCallbackGroup())
+            cancel_callback=self.cancel_callback)
 
     def execute_callback(self, goal_handle):
         """算出 order 项斐波那契，每算一项播报一次."""
