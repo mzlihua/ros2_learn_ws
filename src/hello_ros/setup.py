@@ -45,6 +45,7 @@ setup(
             'mode_client = hello_ros.mode_client:main',
 
             'group_demo = hello_ros.group_demo:main',
+            'qos_talker = hello_ros.qos_talker:main',
 
         ],
     },

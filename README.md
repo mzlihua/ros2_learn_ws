@@ -1,7 +1,7 @@
 # ROS 2 学习工作区
 
 > 系统学习 ROS 2 **核心基础**的练习工作区。
-> 路线：话题 → 服务 → 参数 → launch → 动作 → 自定义消息，逐关手写代码 + 实测验证。
+> 路线：话题 → 服务 → 参数 → launch → 动作 → 自定义消息 → 执行器与回调组 → QoS 策略，逐关手写代码 + 实测验证。
 > 另有 **C++ 支线**（`rclcpp`），2026-09-13 起步，与 Python 主线并行。
 
 ---
@@ -56,6 +56,7 @@ ros2_learn_ws/
 │   ├── lesson-05-action.md           第 5 关 · 动作
 │   ├── lesson-06-custom-message.md   第 6 关 · 自定义消息
 │   ├── lesson-07-executor.md         第 7 关 · 执行器与回调组
+│   ├── lesson-08-qos.md              第 8 关 · QoS 策略
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   └── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 └── src/
@@ -78,7 +79,8 @@ ros2_learn_ws/
     │       ├── status_listener.py 订阅自定义消息 RobotStatus
     │       ├── mode_server.py    提供自定义服务 SetMode
     │       ├── mode_client.py    调用自定义服务 SetMode
-    │       └── group_demo.py     执行器与回调组实验（慢订阅者 + 定时器争"锁"）
+    │       ├── group_demo.py     执行器与回调组实验（慢订阅者 + 定时器争"锁"）
+    │       └── qos_talker.py     QoS 实验：TRANSIENT_LOCAL 发布者（发 5 条后停发但不退出）
     ├── hello_ros_interfaces/  ← 接口包（ament_cmake）· 只定义合同，不含逻辑
     │   ├── package.xml           依赖声明
     │   ├── CMakeLists.txt        rosidl_generate_interfaces 登记表
@@ -145,6 +147,28 @@ ros2 node list
 pkill -f "hello_ros"
 ```
 
+> ⚠️ **`pkill -f` 匹配的是「命令行文本」，不是「节点名」。**
+> 所以在**写成一行**的命令里，它还会匹配到**你自己这条命令**，把自己那个 shell 杀掉
+> （症状：终端莫名退出，退出码 144）。
+>
+> 想避开自匹配，把关键词拆开写：
+>
+> ```bash
+> P="qos""_talker"; ps -eo pid,etimes,args | grep -F "$P" | grep -v grep | awk '{print $1}' | xargs -r kill
+> ```
+>
+> `etimes` 那一列是"这个进程已经活了**多少秒**" —— **几百秒的一眼就是残留**。
+
+**⭐ 做实验之前先确认环境是干净的**：
+
+```bash
+ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
+```
+
+看到 `Publisher count: 1` 就说明还有旧进程活着 ——
+这时你测的**不是你以为的那个东西**，日志会变成两个进程交错的垃圾，而且**完全不报错**。
+详见 [lesson-08 §8 坑 3](docs/lesson-08-qos.md)。
+
 ---
 
 ## 课程进度
@@ -160,6 +184,7 @@ pkill -f "hello_ros"
 | 5 | 动作 Action | ✅ 已完成 | [lesson-05-action.md](docs/lesson-05-action.md) |
 | 6 | 自定义消息 `.msg` / `.srv` | ✅ 已完成 | [lesson-06-custom-message.md](docs/lesson-06-custom-message.md) |
 | 7 | 执行器与回调组 | ✅ 已完成 | [lesson-07-executor.md](docs/lesson-07-executor.md) |
+| 8 | QoS 策略 | ✅ 已完成 | [lesson-08-qos.md](docs/lesson-08-qos.md) |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -190,6 +215,7 @@ pkill -f "hello_ros"
 | `mode_server` | [mode_server.py](src/hello_ros/hello_ros/mode_server.py) | 服务端，提供自定义服务 `set_mode`（只接受 0/1/2） | `ros2 service call /set_mode hello_ros_interfaces/srv/SetMode "{mode: 5}"` |
 | `mode_client` | [mode_client.py](src/hello_ros/hello_ros/mode_client.py) | 客户端，调用 `set_mode` 并打印响应两个字段 | 先跑 `mode_server` 再跑它 |
 | `group_demo` | [group_demo.py](src/hello_ros/hello_ros/group_demo.py) | **实验节点**：一个睡 2 秒的慢订阅者 + 一个 0.5 秒定时器，用来观察回调组怎么分配"锁" | `ros2 run hello_ros group_demo`（另开终端再跑 `talker` 触发慢回调） |
+| `qos_talker` | [qos_talker.py](src/hello_ros/hello_ros/qos_talker.py) | **实验节点**：`TRANSIENT_LOCAL` 发布者，发 5 条后**停发但不退出** —— 让晚来的订阅者能看到"历史" | `ros2 run hello_ros qos_talker --ros-args -p depth:=2`（另开终端再 `ros2 topic echo` 看收到几条） |
 
 ### 接口包 `hello_ros_interfaces`
 
@@ -269,6 +295,13 @@ ros2 service call /set_mode hello_ros_interfaces/srv/SetMode "{mode: 5}"  # 越�
 ros2 run hello_ros group_demo   # 终端 A
 ros2 run hello_ros talker       # 终端 B → 慢回调睡 2 秒，看定时器有没有被挡住
 
+# QoS：两个终端（先起发布者，等它发完 5 条，再起订阅者看"历史"）
+ros2 run hello_ros qos_talker --ros-args -p depth:=2   # 终端 A → 发完 第1~5 条后停住不退
+ros2 topic echo --qos-reliability reliable --qos-durability transient_local --qos-depth 5 \
+  /qos_hist std_msgs/msg/String                        # 终端 B → 只有 2 条：第4条、第5条
+#   ⚠️ 两个 QoS 参数都要给 —— `ros2 topic echo` 默认是 BEST_EFFORT，只给 durability 收不到历史
+#   ⚠️ 实验前先 `ros2 topic info /qos_hist` 确认是 Unknown topic（防残留进程）
+
 # 接口本身（不需要任何节点）
 ros2 interface package hello_ros_interfaces
 ros2 interface show hello_ros_interfaces/srv/SetMode
@@ -291,6 +324,7 @@ ros2 interface show hello_ros_interfaces/srv/SetMode
 | [第 5 关 · 动作](docs/lesson-05-action.md) | 动作 = 3 服务 + 2 话题拼出来的、Goal/Feedback/Result 三段式、**服务端 handle "宣布" vs 客户端 handle "请求"**、执行器那一层决定取消能不能生效、回调式客户端的三个钩子、两处"信封→盒子"、checkpoint 位置决定语义 |
 | [第 6 关 · 自定义消息](docs/lesson-06-custom-message.md) | **`.msg` 是合同不是代码**（5 行文本 → Python/C++/IDL/JSON 四种产物）、**三张登记表**（文件在磁盘上 ≠ 被注册了）、`.srv` 的 `---` 必须只有三个减号、嵌套消息的两处 `DEPENDENCIES`、接口为什么单独一个包、**静默 bug #4：`if x == 0 or 1 or 2` 恒真**、改了 `.py` 不重启节点 = 白改 |
 | [第 7 关 · 执行器与回调组](docs/lesson-07-executor.md) | **执行器决定"有几只手"，回调组决定"第二只手能不能拿同一把锁"**、默认组 = 全局串行、**⭐ `execute_callback` 是裸任务不挂任何回调组**（源码 `server.py:686`）、**订正第 5 关**的 2×2 矩阵、三路对照表、**可重入组是"允许重叠"不是"允许并行"**、定时器不排队（错过的拍子丢掉）、日志时间戳是 Unix 纪元秒 |
+| [第 8 关 · QoS 策略](docs/lesson-08-qos.md) | **QoS 是两边各报要求、DDS 在中间配对**、三条策略（Reliability / Durability / History）、**⭐ 唯一的兼容规则：发布者提供 ≥ 订阅者要求（是 ≥ 不是 =）**、不兼容的三副面孔（**收不到 + 两边各一条 WARN + `topic info` 照样 `1 / 1`**）、**`TRANSIENT_LOCAL` 的"历史"是发布者进程内存里的抽屉**、`transient` 不是持久化、**迟到订阅者要拿到就清 `topic info` 必须是 `Unknown topic`**、⭐ 订正第 1 关"必须先起 talker"的旧账 |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 
@@ -377,6 +411,10 @@ colcon test-result --verbose                            # ② 查看（不执行
 - [x] ~~清理 `fib_server.py` / `fib_client.py` 里练习时的 `# TODO n：...` 注释~~（2026-09-15 已清，`colcon test` 全绿）
 - [x] ~~给 `hello_ros_interfaces/package.xml` 补 `<description>`~~（2026-09-16 已补）
 - [x] ~~清理第 6 关 4 个节点的 `# TODO n：...` 注释 + 5 处 flake8 风格问题~~（2026-09-16 已清，`flake8` / `pep257` / `mypy` 全过）
+- [x] ~~清理 `qos_talker.py` 里练习时的 `# TODO n：...` 注释 + 第 3 行的 flake8 问题~~（2026-09-18 已清，`flake8` 全包干净）
+- [x] ~~写 `docs/lesson-08-qos.md`~~（2026-09-18 已写，10 节完整结构 + 6 道自测题）。
+      素材来源：兼容性四格矩阵、抽屉容量表、判据实验全部为课堂实测；
+      踩坑记录四条为 ① 把 API 速查表当填空答案 ② `self.HistoryPolicy` 名字挂错人 ③ 残留进程污染实验（**栽了 3 次**）④ 我自己把输出重定向到 `/dev/null` 后误判"不兼容是静默的"
 - [x] ~~写 `docs/lesson-07-executor.md`~~（2026-09-17 已写，10 节完整结构 + 6 道自测题）。
       素材来源：三路对照表和"两个决定"脱胎于 [group_demo.py](src/hello_ros/hello_ros/group_demo.py) 顶部注释；
       踩坑记录四条为 ① 敲错命令名 `fid_server` ② `cb_slow` 函数体是空的 ③ 没起发布者导致回调从没被触发 ④ 残留进程污染实验
@@ -386,5 +424,5 @@ colcon test-result --verbose                            # ② 查看（不执行
 
 ---
 
-**当前进度：第 1～7 关全部完成 —— 核心基础的七关走完一轮。**
-**下一步：①（可选）把自定义接口接到 C++ 支线上（Python 发、C++ 收）；②（可选）写 C++ 版 listener；③ 第 7 关 §9.2 的 5 道加练题。**
+**当前进度：第 1～8 关全部完成 —— 核心基础八关走完一轮（含第 8 关订正第 1 关"QoS 历史消息"的旧账）。**
+**下一步：①（可选）把自定义接口接到 C++ 支线上（Python 发、C++ 收）；②（可选）写 C++ 版 listener；③ 第 7 / 第 8 关 §9.2 的加练题。**
