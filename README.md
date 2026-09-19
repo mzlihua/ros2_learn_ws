@@ -58,7 +58,8 @@ ros2_learn_ws/
 │   ├── lesson-07-executor.md         第 7 关 · 执行器与回调组
 │   ├── lesson-08-qos.md              第 8 关 · QoS 策略
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
-│   └── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
+│   ├── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
+│   └── cpp-02-subscriber.md          C++ 支线 · 订阅者（含多字段 / 嵌套消息）
 └── src/
     ├── hello_ros/             ← Python 包（ament_python）
     │   ├── package.xml           依赖声明
@@ -189,8 +190,9 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 **C++ 支线**（2026-09-13 起，与主线并行）
 
 | # | 内容 | 状态 | 笔记 |
-|:-:|---|:-:|---|
-| 1 | 用 rclcpp 写第一个节点 / 发布者 | 🚧 进行中 | [cpp-01-getting-started.md](docs/cpp-01-getting-started.md) |
+|---|---|---|---|
+| 1 | 用 rclcpp 写第一个节点 / 发布者 | ✅ 已完成 | [cpp-01-getting-started.md](docs/cpp-01-getting-started.md) |
+| 2 | 订阅者：`listener.cpp` + 多字段/嵌套消息的 `status_listener.cpp` | ✅ 已完成 | [cpp-02-subscriber.md](docs/cpp-02-subscriber.md) |
 
 ---
 
@@ -248,6 +250,8 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 |---|---|---|---|
 | `hello_cpp` | [hello_cpp.cpp](src/hello_ros_cpp/src/hello_cpp.cpp) | 最小节点（C++ 版），每秒打印一次心跳 | `ros2 run hello_ros_cpp hello_cpp` |
 | `talker` | [talker.cpp](src/hello_ros_cpp/src/talker.cpp) | 发布者（C++ 版），每秒往 `/chatter` 发一条 | `ros2 topic echo /chatter` |
+| `listener` | [listener.cpp](src/hello_ros_cpp/src/listener.cpp) | 订阅者（C++ 版），订阅 `/chatter` | 先跑 `hello_ros_cpp talker` |
+| `status_listener` | [status_listener.cpp](src/hello_ros_cpp/src/status_listener.cpp) | 订阅 `/robot_status`，打印 4 个字段（含嵌套的 `position.x`） | 先跑 `hello_ros status_talker` |
 
 > 💡 `hello_ros_cpp talker` 和 `hello_ros talker` 发的是**同一个话题** `/chatter`，
 > 所以可以拿 `hello_ros_cpp talker` + `hello_ros listener` 直接验证**跨语言互操作**。
@@ -281,6 +285,14 @@ ros2 launch hello_ros demo.launch.py period:=0.5 message:=你好
 # 跨语言互操作：C++ 发，Python 收（能通，只跟话题名和消息类型有关）
 ros2 run hello_ros_cpp talker   # 终端 A（C++）
 ros2 run hello_ros listener     # 终端 B（Python）
+
+# 跨语言互操作：C++ 发，C++ 收（同语言，走同一个话题）
+ros2 run hello_ros_cpp talker     # 终端 A
+ros2 run hello_ros_cpp listener   # 终端 B → 收到：第1次心跳……
+
+# ⭐ 跨语言互操作：Python 发，C++ 收（多字段 + 嵌套消息）
+ros2 run hello_ros status_talker     # 终端 A（Python）
+ros2 run hello_ros_cpp status_listener   # 终端 B（C++）→ 收到: r2d2 电量=65.0 mode=1 x=7.0
 
 # 自定义消息：两个终端
 ros2 run hello_ros status_talker     # 终端 A
@@ -327,6 +339,7 @@ ros2 interface show hello_ros_interfaces/srv/SetMode
 | [第 8 关 · QoS 策略](docs/lesson-08-qos.md) | **QoS 是两边各报要求、DDS 在中间配对**、三条策略（Reliability / Durability / History）、**⭐ 唯一的兼容规则：发布者提供 ≥ 订阅者要求（是 ≥ 不是 =）**、不兼容的三副面孔（**收不到 + 两边各一条 WARN + `topic info` 照样 `1 / 1`**）、**`TRANSIENT_LOCAL` 的"历史"是发布者进程内存里的抽屉**、`transient` 不是持久化、**迟到订阅者要拿到就清 `topic info` 必须是 `Unknown topic`**、⭐ 订正第 1 关"必须先起 talker"的旧账 |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
+| [C++ 支线 02](docs/cpp-02-subscriber.md) | 订阅者的完整形状（消息类型从"第 1 个参数"挪进 `<>`）、⭐ lambda 是"适配器"（定时器收空、订阅者收 msg）、**⭐⭐ 成员变量 4 块结构 `rclcpp::<角色><消息类型>::SharedPtr`**、`.` vs `->` 剥盒子、**格式符按位置对（错位只给 warning，build 全绿但打印垃圾）**、`%f` 默认 6 位小数、CMake 新增可执行文件的 **4 处**、**实测：嵌套消息不用显式 find 依赖**、跨语言逐字段一致 |
 
 > 📖 复习建议：每份笔记的 **§7「实测现象与结论」** 和 **§9「自测题」** 是重点。自测题答案默认折叠，**先自己答一遍再点开**。
 
@@ -418,11 +431,15 @@ colcon test-result --verbose                            # ② 查看（不执行
 - [x] ~~写 `docs/lesson-07-executor.md`~~（2026-09-17 已写，10 节完整结构 + 6 道自测题）。
       素材来源：三路对照表和"两个决定"脱胎于 [group_demo.py](src/hello_ros/hello_ros/group_demo.py) 顶部注释；
       踩坑记录四条为 ① 敲错命令名 `fid_server` ② `cb_slow` 函数体是空的 ③ 没起发布者导致回调从没被触发 ④ 残留进程污染实验
-- [ ] （可选）**C++ 节点用这个接口** —— `hello_ros_cpp` 里写一个订阅 `robot_status` 的节点，
-      让 Python 发、C++ 收，把"契约跨语言"真正跑通（第 6 关的收尾大戏，也是 C++ 支线的下一站）
+- [x] ~~（可选）**C++ 节点用这个接口**~~（2026-09-19 已完成 → [status_listener.cpp](src/hello_ros_cpp/src/status_listener.cpp)，
+      Python `status_talker` 发 / C++ 收，逐字段一致；笔记 [cpp-02-subscriber.md](docs/cpp-02-subscriber.md)）
+- [ ] （可选）`docs/cpp-03-*.md`：C++ 版**发布者** —— 用 C++ 写 `status_talker`，
+      把 `.` 和 `->` 的**赋值**方向也走一遍（`msg->position.x = ...`），补上 cpp-02 §9.2 题 ④
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～8 关全部完成 —— 核心基础八关走完一轮（含第 8 关订正第 1 关"QoS 历史消息"的旧账）。**
-**下一步：①（可选）把自定义接口接到 C++ 支线上（Python 发、C++ 收）；②（可选）写 C++ 版 listener；③ 第 7 / 第 8 关 §9.2 的加练题。**
+**当前进度：第 1～8 关全部完成（核心基础八关走完一轮）＋ C++ 支线 01 / 02 完成 ——
+C++ 侧已经能读话题、收自定义多字段消息，并且和 Python 节点双向互通。**
+
+**下一步：①（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；②（可选）把 action / service 也接到 C++ 支线；③ 第 7 / 第 8 关 §9.2 的加练题。**
