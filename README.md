@@ -57,6 +57,7 @@ ros2_learn_ws/
 │   ├── lesson-06-custom-message.md   第 6 关 · 自定义消息
 │   ├── lesson-07-executor.md         第 7 关 · 执行器与回调组
 │   ├── lesson-08-qos.md              第 8 关 · QoS 策略
+│   ├── lesson-09-bag.md              第 9 关 · ros2 bag 录包与回放
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   ├── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 │   └── cpp-02-subscriber.md          C++ 支线 · 订阅者（含多字段 / 嵌套消息）
@@ -186,6 +187,7 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 | 6 | 自定义消息 `.msg` / `.srv` | ✅ 已完成 | [lesson-06-custom-message.md](docs/lesson-06-custom-message.md) |
 | 7 | 执行器与回调组 | ✅ 已完成 | [lesson-07-executor.md](docs/lesson-07-executor.md) |
 | 8 | QoS 策略 | ✅ 已完成 | [lesson-08-qos.md](docs/lesson-08-qos.md) |
+| 9 | ros2 bag 录包与回放 | ✅ 已完成 | [lesson-09-bag.md](docs/lesson-09-bag.md) |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -337,6 +339,7 @@ ros2 interface show hello_ros_interfaces/srv/SetMode
 | [第 6 关 · 自定义消息](docs/lesson-06-custom-message.md) | **`.msg` 是合同不是代码**（5 行文本 → Python/C++/IDL/JSON 四种产物）、**三张登记表**（文件在磁盘上 ≠ 被注册了）、`.srv` 的 `---` 必须只有三个减号、嵌套消息的两处 `DEPENDENCIES`、接口为什么单独一个包、**静默 bug #4：`if x == 0 or 1 or 2` 恒真**、改了 `.py` 不重启节点 = 白改 |
 | [第 7 关 · 执行器与回调组](docs/lesson-07-executor.md) | **执行器决定"有几只手"，回调组决定"第二只手能不能拿同一把锁"**、默认组 = 全局串行、**⭐ `execute_callback` 是裸任务不挂任何回调组**（源码 `server.py:686`）、**订正第 5 关**的 2×2 矩阵、三路对照表、**可重入组是"允许重叠"不是"允许并行"**、定时器不排队（错过的拍子丢掉）、日志时间戳是 Unix 纪元秒 |
 | [第 8 关 · QoS 策略](docs/lesson-08-qos.md) | **QoS 是两边各报要求、DDS 在中间配对**、三条策略（Reliability / Durability / History）、**⭐ 唯一的兼容规则：发布者提供 ≥ 订阅者要求（是 ≥ 不是 =）**、不兼容的三副面孔（**收不到 + 两边各一条 WARN + `topic info` 照样 `1 / 1`**）、**`TRANSIENT_LOCAL` 的"历史"是发布者进程内存里的抽屉**、`transient` 不是持久化、**迟到订阅者要拿到就清 `topic info` 必须是 `Unknown topic`**、⭐ 订正第 1 关"必须先起 talker"的旧账 |
+| [第 9 关 · ros2 bag](docs/lesson-09-bag.md) | **`record` 是个订阅者、`play` 是个发布者**（bag 不是新通信机制）、bag 是**目录**不是文件、**⭐ `Duration` 量的是"第一条到最后一条"不是"录了多久"**（N 条 = N−1 个间隔）、**⭐⭐ 判据实验：只改 `--qos-durability` 一个词 → 5 条 vs 0 条**、**历史没有时间戳**（5 条挤在 30 微秒）、2262 年 int64 哨兵值、**空包的三副面孔**、`play -r` 只改播放速度、**未解之谜：回放开头可能漏第一条** |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 | [C++ 支线 02](docs/cpp-02-subscriber.md) | 订阅者的完整形状（消息类型从"第 1 个参数"挪进 `<>`）、⭐ lambda 是"适配器"（定时器收空、订阅者收 msg）、**⭐⭐ 成员变量 4 块结构 `rclcpp::<角色><消息类型>::SharedPtr`**、`.` vs `->` 剥盒子、**格式符按位置对（错位只给 warning，build 全绿但打印垃圾）**、`%f` 默认 6 位小数、CMake 新增可执行文件的 **4 处**、**实测：嵌套消息不用显式 find 依赖**、跨语言逐字段一致 |
@@ -433,13 +436,19 @@ colcon test-result --verbose                            # ② 查看（不执行
       踩坑记录四条为 ① 敲错命令名 `fid_server` ② `cb_slow` 函数体是空的 ③ 没起发布者导致回调从没被触发 ④ 残留进程污染实验
 - [x] ~~（可选）**C++ 节点用这个接口**~~（2026-09-19 已完成 → [status_listener.cpp](src/hello_ros_cpp/src/status_listener.cpp)，
       Python `status_talker` 发 / C++ 收，逐字段一致；笔记 [cpp-02-subscriber.md](docs/cpp-02-subscriber.md)）
+- [x] ~~写 `docs/lesson-09-bag.md`~~（2026-09-21 已写，10 节完整结构 + 6 道自测题）。
+      **本关没有新代码，是九关里唯一一关纯 CLI 的**；
+      素材来源：判据实验（TL → 5 条 / volatile → 0 条）、`Duration` 公式、`bag_tl` 的 30 微秒、
+      2262 年哨兵值、三次回放 12/12/11 全部为实测；
+      踩坑记录六条为 ① 这版 `record` 不接位置参数 ② **我自己造题时栽的 `-w 0`**（`-t` 默认把 `-w` 变成 1，两轮都录到 5 条）③ 非 tty 下只认 SIGTERM ④ 废题的形状（发布者已死 → 0 条证明不了任何事）⑤ **我自己栽的** `ls -l <目录>/` 跟软链进去 ⑥ 不带 `--symlink-install` 的 build 会把 editable 安装降级成拷贝
 - [ ] （可选）`docs/cpp-03-*.md`：C++ 版**发布者** —— 用 C++ 写 `status_talker`，
       把 `.` 和 `->` 的**赋值**方向也走一遍（`msg->position.x = ...`），补上 cpp-02 §9.2 题 ④
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～8 关全部完成（核心基础八关走完一轮）＋ C++ 支线 01 / 02 完成 ——
-C++ 侧已经能读话题、收自定义多字段消息，并且和 Python 节点双向互通。**
+**当前进度：第 1～9 关全部完成（核心基础九关走完一轮）＋ C++ 支线 01 / 02 完成 ——
+C++ 侧已经能读话题、收自定义多字段消息，并且和 Python 节点双向互通；
+第 9 关第一次把数据冻结到磁盘上，也第一次让你亲手用「判据」把一个悬空的结论钉死。**
 
-**下一步：①（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；②（可选）把 action / service 也接到 C++ 支线；③ 第 7 / 第 8 关 §9.2 的加练题。**
+**下一步：①（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；②（可选）把 action / service 也接到 C++ 支线；③ 第 7 / 第 8 / 第 9 关 §9.2 的加练题（第 9 关那 5 道里，第 3 题「回放漏开头之谜」最有挖头）。**
