@@ -4,6 +4,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
+#include "rclcpp_components/register_node_macro.hpp"
 
 using namespace std::chrono_literals;
 
@@ -11,7 +12,7 @@ using namespace std::chrono_literals;
 class Talker : public rclcpp::Node
 {
 public:
-    Talker() : Node("talker_cpp")        // ≈ super().__init__('talker_cpp')
+    Talker(const rclcpp::NodeOptions & options) : Node("talker_cpp", options)        // ≈ super().__init__('talker_cpp')
     {
         count_ = 0;
 
@@ -38,11 +39,4 @@ private:
     int count_;
 };
 
-
-int main(int argc, char ** argv)
-{
-    rclcpp::init(argc, argv);                       // ≈ rclpy.init()
-    rclcpp::spin(std::make_shared<Talker>());       // ≈ rclpy.spin(node)
-    rclcpp::shutdown();                             // ≈ rclpy.shutdown()
-    return 0;
-}
+RCLCPP_COMPONENTS_REGISTER_NODE(Talker)

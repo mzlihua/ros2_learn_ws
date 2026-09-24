@@ -59,6 +59,7 @@ ros2_learn_ws/
 │   ├── lesson-08-qos.md              第 8 关 · QoS 策略
 │   ├── lesson-09-bag.md              第 9 关 · ros2 bag 录包与回放
 │   ├── lesson-10-namespace.md        第 10 关 · 命名空间与重映射
+│   ├── lesson-11-composition.md      第 11 关 · Composition（组件与容器）
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   ├── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 │   └── cpp-02-subscriber.md          C++ 支线 · 订阅者（含多字段 / 嵌套消息）
@@ -97,7 +98,10 @@ ros2_learn_ws/
         ├── CMakeLists.txt        编译与安装规则
         └── src/
             ├── hello_cpp.cpp     最小节点：定时打印（C++ 版）
-            └── talker.cpp        发布者（C++ 版）
+            ├── talker.cpp        发布者（C++ 版）
+            ├── listener.cpp      订阅者（C++ 版）
+            ├── status_listener.cpp  订阅自定义消息（含嵌套字段，C++ 版）
+            └── talker_component.cpp ⭐ 第 11 关：talker 的【组件】版（无 main，可被容器装载）
 ```
 
 > 💡 **接口为什么要单独一个包？** 它只定义**合同**，不含逻辑。`hello_ros`（Python）和
@@ -191,6 +195,7 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 | 8 | QoS 策略 | ✅ 已完成 | [lesson-08-qos.md](docs/lesson-08-qos.md) |
 | 9 | ros2 bag 录包与回放 | ✅ 已完成 | [lesson-09-bag.md](docs/lesson-09-bag.md) |
 | 10 | 命名空间与重映射 | ✅ 已完成 | [lesson-10-namespace.md](docs/lesson-10-namespace.md) |
+| 11 | Composition（组件与容器） | ✅ 已完成 | [lesson-11-composition.md](docs/lesson-11-composition.md) |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -262,6 +267,34 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 > 💡 `hello_ros_cpp talker` 和 `hello_ros talker` 发的是**同一个话题** `/chatter`，
 > 所以可以拿 `hello_ros_cpp talker` + `hello_ros listener` 直接验证**跨语言互操作**。
 
+#### ⭐ 组件（第 11 关）—— 它不是"可执行文件"，是能被容器装载的**库**
+
+上面那 4 个是 `add_executable`（程序，有 `main`，自己会跑）。
+`talker_component` **不一样**：它是 `add_library`（库，**没有 `main`**，得等容器把它造出来），
+所以它**不在 `ros2 pkg executables` 里**，而在**组件清单**里。
+
+| 组件类名 | 来源 | 装上去之后的节点名 | 验证命令 |
+|---|---|---|---|
+| `Talker` | [talker_component.cpp](src/hello_ros_cpp/src/talker_component.cpp) | `/talker_cpp` | 见下面那段 |
+
+```bash
+# 终端 A：起一个容器（它自己是个节点，叫 /ComponentManager，起来时【不打印任何东西】）
+ros2 run rclcpp_components component_container
+
+# 终端 B：把组件装进去（load 时给的是【包名 + 类名】，不是节点名）
+ros2 component load /ComponentManager hello_ros_cpp Talker
+ros2 component list     # → 1 /talker_cpp
+ros2 node list          # → /ComponentManager /talker_cpp   （2 个节点）
+pgrep -c compo          # → 1                              （⭐ 1 个进程）
+```
+
+> ⭐ **本关唯一必须记住的一句：节点数 ≠ 进程数。**
+> 容器自己**是节点但不是组件** —— 3 个组件 / 4 个节点 / **1 个进程**，三者同时成立。
+>
+> ⚠️ `.so` 装在 `install/hello_ros_cpp/lib/`（**不是** `lib/hello_ros_cpp/`），
+> 地址记在 `share/ament_index/resource_index/rclcpp_components/hello_ros_cpp` 里。
+> 装错层级 = build 全绿 + `component types` 能列出 + **`load` 时才炸**。详见 [lesson-11](docs/lesson-11-composition.md)。
+
 ### 典型组合
 
 ```bash
@@ -323,6 +356,19 @@ ros2 topic echo --qos-reliability reliable --qos-durability transient_local --qo
 # 接口本身（不需要任何节点）
 ros2 interface package hello_ros_interfaces
 ros2 interface show hello_ros_interfaces/srv/SetMode
+
+# ⭐ Composition：多个节点住进【一个进程】（第 11 关）
+ros2 run rclcpp_components component_container        # 终端 A：起容器（终端安静，不打印）
+
+# 终端 B：往容器里装组件（给的是【包名 + 类名】）
+ros2 component load /ComponentManager hello_ros_cpp Talker
+ros2 component load /ComponentManager composition composition::Listener -r /chatter:=/demo_chatter
+#                                                     ↑ 官方陪练            ↑ 必须换话题名：
+#   我们的 talker_cpp 发 std_msgs/String，官方 Listener 收 example_interfaces/String，
+#   两个 "String" 字段一模一样也是【不同类型】，DDS 按【类型名】配对 → 会报 incompatible type
+ros2 component list      # → 1 /talker_cpp   2 /listener
+ros2 node list           # → /ComponentManager /listener /talker_cpp   （3 个节点）
+pgrep -c compo           # → 1                                        （⭐ 1 个进程）
 ```
 
 ---
@@ -345,6 +391,7 @@ ros2 interface show hello_ros_interfaces/srv/SetMode
 | [第 8 关 · QoS 策略](docs/lesson-08-qos.md) | **QoS 是两边各报要求、DDS 在中间配对**、三条策略（Reliability / Durability / History）、**⭐ 唯一的兼容规则：发布者提供 ≥ 订阅者要求（是 ≥ 不是 =）**、不兼容的三副面孔（**收不到 + 两边各一条 WARN + `topic info` 照样 `1 / 1`**）、**`TRANSIENT_LOCAL` 的"历史"是发布者进程内存里的抽屉**、`transient` 不是持久化、**迟到订阅者要拿到就清 `topic info` 必须是 `Unknown topic`**、⭐ 订正第 1 关"必须先起 talker"的旧账 |
 | [第 9 关 · ros2 bag](docs/lesson-09-bag.md) | **`record` 是个订阅者、`play` 是个发布者**（bag 不是新通信机制）、bag 是**目录**不是文件、**⭐ `Duration` 量的是"第一条到最后一条"不是"录了多久"**（N 条 = N−1 个间隔）、**⭐⭐ 判据实验：只改 `--qos-durability` 一个词 → 5 条 vs 0 条**、**历史没有时间戳**（5 条挤在 30 微秒）、2262 年 int64 哨兵值、**空包的三副面孔**、`play -r` 只改播放速度、**未解之谜：回放开头可能漏第一条** |
 | [第 10 关 · 命名空间与重映射](docs/lesson-10-namespace.md) | **命名空间是运行时的字符串前缀**（代码一个字不改）、**四种名字**（相对 `chatter` / 绝对 `/chatter` / 私有 `~/x` / 节点名 `__node`）各自加不加前缀、**⭐ 日志名用 `.` 不用 `/`**（`rcutils/logging.h:37`）、**⭐⭐ 重映射左边必须写「展开后的全名」——写错【不报错，只是什么都不做】**、C/D/E/F 四格对照、`-r` 在 `ros2 run` 是 remap 但在 **`ros2 bag play` 是 `--rate`**、bag 存的是**全名**、**⭐⭐ 破第 9 关悬案：`-d` 是 DDS 配对窗口**（基线 2/9 → 加 `-d` 15/15） |
+| [第 11 关 · Composition](docs/lesson-11-composition.md) | **组件 = 没有 `main` 的节点类，容器 = 那个造它的进程**、**⭐⭐ 节点数 ≠ 进程数**（3 组件 / 4 节点 / **1 进程**）、`RCLCPP_COMPONENTS_REGISTER_NODE` 与构造函数契约、**ament 登记表** `Talker;lib/libtalker_component.so`（`.so` 必须装 `lib/` 而非 `lib/${PROJECT_NAME}/`，装错 = **build 全绿 + `types` 列得出 + `load` 才炸**）、容器的**三个隐形服务**、`pgrep -c compo` 为什么不是全名（`comm` 截 15 字符）、**⭐⭐ DDS 按类型名配对**：两个字段一模一样的 `String` 也配不上、**失败的装载会吃掉一个 component 编号**（所以编号有洞 = 中间炸过）、删除 build/install 重来一遍验证 CMake 无缺行 |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 | [C++ 支线 02](docs/cpp-02-subscriber.md) | 订阅者的完整形状（消息类型从"第 1 个参数"挪进 `<>`）、⭐ lambda 是"适配器"（定时器收空、订阅者收 msg）、**⭐⭐ 成员变量 4 块结构 `rclcpp::<角色><消息类型>::SharedPtr`**、`.` vs `->` 剥盒子、**格式符按位置对（错位只给 warning，build 全绿但打印垃圾）**、`%f` 默认 6 位小数、CMake 新增可执行文件的 **4 处**、**实测：嵌套消息不用显式 find 依赖**、跨语言逐字段一致 |
@@ -453,15 +500,34 @@ colcon test-result --verbose                            # ② 查看（不执行
       两台机器人零串台、`remappings` 加错对象导致**全静音**（`Publisher count: 0`）、
       `bag_r1` 空包 / `bag_r2` 14 条、`--remap` 13 条 vs `-r __ns:=/robot1` 14 条，全部为实测；
       踩坑记录五条为 ① **我自己预测错的** `ros2 bag play -r` 其实是 `--rate` ② 重映射加到了两个节点上 ③ 忘了删 remappings 录出空包 ④ 残留 listener 污染四轮数据 ⑤ **我自己栽的** `timeout` 杀父进程留下 947 秒孤儿节点
+- [x] ~~写 `docs/lesson-11-composition.md`~~（2026-09-24 已写，10 节完整结构 + 7 道自测题 + 6 道留给下次）。
+      **本关新增一个文件**（[talker_component.cpp](src/hello_ros_cpp/src/talker_component.cpp) —— 从 `talker.cpp` 复制后改 3 处），
+      CMake 加 `add_library` + `register_nodes` + 单独的 `install(... DESTINATION lib)`；
+      素材来源：3 组件 / **4 节点 / 1 进程**（他预测 2 进程）、容器启动**终端安静**、
+      装载的**两端各一句话**（你这边 1 句回执 / 容器那边 3 行日志）、`pgrep -c compo` 而不是全名、
+      三个 `_container` 隐形服务、**两个字段一模一样的 `String` 也配不上**（DDS 按类型名）、
+      失败的装载**吃掉编号**（所以 1/4/5 有洞）、`rm -rf build install` 重来验证 CMake，全部为实测；
+      踩坑记录九条为 ① `add_executable` 写成程序 ② 改了 target 名没改源文件名（第 4 关 `glob` 坑的镜像）
+      ③ `.so` 装到 `lib/hello_ros_cpp/` ④ 构造函数签名错三处 ⑤ 改 CMake 不重新 build
+      ⑥ 没 `source` 导致 `component types` **静默空** ⑦ 失败的装载吃编号 ⑧ **贴的是片段**
+      （两个时间戳差 103 秒，把自证证据剪掉了 —— 第 9 关那条老账又犯了）
+      ⑨ **陈旧 build 产物**：旧 `add_executable` 的尸体还挂在 `ros2 pkg executables` 里
+- [ ] （可选）**第 11 关 §9.2 的加练题**：其中第 4 / 5 题最有挖头 ——
+      **`component_container` 是单线程的，那第 7 关"执行器有几只手"在这个进程里是什么？**
+      换成 `component_container_mt` 会变吗？这是 composition × 执行器的交叉口
 - [ ] （可选）`docs/cpp-03-*.md`：C++ 版**发布者** —— 用 C++ 写 `status_talker`，
       把 `.` 和 `->` 的**赋值**方向也走一遍（`msg->position.x = ...`），补上 cpp-02 §9.2 题 ④
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～10 关全部完成（核心基础十关走完一轮）＋ C++ 支线 01 / 02 完成 ——
+**当前进度：第 1～11 关全部完成（核心基础十关 + Composition 走完一轮）＋ C++ 支线 01 / 02 完成 ——
 C++ 侧已经能读话题、收自定义多字段消息，并且和 Python 节点双向互通；
 第 9 关第一次把数据冻结到磁盘上，也第一次让你亲手用「判据」把一个悬空的结论钉死；
-第 10 关让同一份代码起了两遍而互不打架，并且把第 9 关那个悬案从「现象」钉成了「病因」。**
+第 10 关让同一份代码起了两遍而互不打架，并且把第 9 关那个悬案从「现象」钉成了「病因」；
+第 11 关把「一个节点 = 一个进程」这条十关没人怀疑过的默认掀掉了 ——
+**4 个节点、1 个进程，三个数字同时在屏幕上成立，而且每一个都是你自己敲出来的。**  
+本关也是第一次，一整关的验收全部由你自己完成。**
 
-**下一步：①（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；②（可选）把 action / service 也接到 C++ 支线；③ 第 7 / 第 8 / 第 10 关 §9.2 的加练题（第 10 关那 6 道里，第 1 题「`__ns` 给两次」和第 6 题「给 recorder 加命名空间」最有挖头）；④ 核心基础十关已走完一轮，下一关可考虑 composition（组件与多节点同进程）或 parameter callback 深挖。**
+**下一步：①（可选）⭐ 第 11 关 §9.2 题 4/5：`component_container` 是单线程的 —— 那第 7 关「执行器有几只手」在这个进程里是什么？
+换成 `component_container_mt` 会变吗？（composition × 执行器的交叉口）；②（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；③（可选）把 action / service 也接到 C++ 支线；④ 第 7 / 第 8 / 第 10 / 第 11 关 §9.2 的加练题；⑤ parameter callback 深挖。**

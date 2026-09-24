@@ -11,9 +11,10 @@
 
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
-  <!-- 第 2 步会用到。这一条已经在了，但至今【没有任何代码用它】。
-       到时候的问题是：RobotStatus 里嵌套了 geometry_msgs/Point，这里要不要再补一条？
-       先不补，看 build 会不会报错。（第 6 关「嵌套消息的两处 DEPENDENCIES」） -->
+  <depend>rclcpp_components</depend>
+  <!-- RobotStatus 里嵌套了 geometry_msgs/Point，这里是【不】补的 ——
+       cpp-02 实测：不补 geometry_msgs 也不报错，嵌套依赖由接口包自己传递过去。
+       （第 6 关「嵌套消息的两处 DEPENDENCIES」的同一件事，那次是 Python 包。） -->
   <depend>hello_ros_interfaces</depend>
 
   <test_depend>ament_lint_auto</test_depend>
