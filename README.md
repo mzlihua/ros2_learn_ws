@@ -61,6 +61,7 @@ ros2_learn_ws/
 │   ├── lesson-10-namespace.md        第 10 关 · 命名空间与重映射
 │   ├── lesson-11-composition.md      第 11 关 · Composition（组件与容器）
 │   ├── lesson-12-component-executor.md  第 12 关 · 组件与执行器（几只手？）
+│   ├── lesson-13-callback-group.md   第 13 关 · 回调组进容器（谁跟谁共用一把锁？）
 │   ├── skill-01-log-reading.md       专项 · 怎么看日志
 │   ├── cpp-01-getting-started.md     C++ 支线 · 第一个 rclcpp 节点
 │   └── cpp-02-subscriber.md          C++ 支线 · 订阅者（含多字段 / 嵌套消息）
@@ -103,7 +104,7 @@ ros2_learn_ws/
             ├── listener.cpp      订阅者（C++ 版）
             ├── status_listener.cpp  订阅自定义消息（含嵌套字段，C++ 版）
             ├── talker_component.cpp  ⭐ 第 11 关：talker 的【组件】版（无 main，可被容器装载）
-            └── sleeper_component.cpp ⭐ 第 12 关：测速仪组件（定时器里睡 0.5 秒，专门占住执行器的手）
+            └── sleeper_component.cpp ⭐ 第 12/13 关：测速仪组件（定时器里睡 0.5 秒，专门占住执行器的手；第 13 关加了第二个定时器 + 两个互斥回调组）
 ```
 
 > 💡 **接口为什么要单独一个包？** 它只定义**合同**，不含逻辑。`hello_ros`（Python）和
@@ -199,6 +200,7 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 | 10 | 命名空间与重映射 | ✅ 已完成 | [lesson-10-namespace.md](docs/lesson-10-namespace.md) |
 | 11 | Composition（组件与容器） | ✅ 已完成 | [lesson-11-composition.md](docs/lesson-11-composition.md) |
 | 12 | 组件与执行器（几只手？） | ✅ 已完成 | [lesson-12-component-executor.md](docs/lesson-12-component-executor.md) |
+| 13 | 回调组进容器（谁跟谁共用一把锁？） | ✅ 已完成 | [lesson-13-callback-group.md](docs/lesson-13-callback-group.md) |
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -279,7 +281,7 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 | 组件类名 | 来源 | 装上去之后的节点名 | 验证命令 |
 |---|---|---|---|
 | `Talker` | [talker_component.cpp](src/hello_ros_cpp/src/talker_component.cpp) | `/talker_cpp` | 见下面那段 |
-| `Sleeper` ⭐ 第 12 关 | [sleeper_component.cpp](src/hello_ros_cpp/src/sleeper_component.cpp) | 由 `-n` 指定 | 见 [lesson-12](docs/lesson-12-component-executor.md) |
+| `Sleeper` ⭐ 第 12/13 关 | [sleeper_component.cpp](src/hello_ros_cpp/src/sleeper_component.cpp) | `sleeper` | 见 [lesson-13](docs/lesson-13-callback-group.md) |
 
 ```bash
 # 终端 A：起一个容器（它自己是个节点，叫 /ComponentManager，起来时【不打印任何东西】）
@@ -377,9 +379,14 @@ ros2 node list           # → /ComponentManager /listener /talker_cpp   （3 �
 pgrep -c compo             # → 1                                      （⭐ 1 个进程）
 
 # ⭐ 换一种容器 = 换执行器 = 换【手数】（第 12 关）
-ros2 run rclcpp_components component_container_mt                     # 一池子手（= CPU 核数）
+ros2 run rclcpp_components component_container_mt                     # 一池子手（= CPU 核数），已弃用
 ros2 run rclcpp_components component_container \
   --executor-type multi-threaded --ros-args -p thread_num:=1          # 明说几条（⭐ 减号，不是下划线）
+
+# ⭐ 换回调组 = 换【锁】（第 13 关：手是进程给的，锁是节点自己带的）
+#   两个定时器都不给组 → 都在【这一个节点的】默认组里 → 同一把锁 → 多线程容器也不夹
+#   各给一个 create_callback_group(MutuallyExclusive) → 两把锁 → 夹
+#   ⚠️ 造出来的组必须用【成员变量】接住：rclcpp 存的是 WeakPtr，没人接住它就不声不响地没了
 
 # 数手：直接看容器进程的线程数（16 核机器上实测：单线程 18 / 多线程 33 / thread_num:=1 → 18）
 ls /proc/$(pgrep -c compo)/task | wc -l
@@ -407,6 +414,7 @@ ls /proc/$(pgrep -c compo)/task | wc -l
 | [第 10 关 · 命名空间与重映射](docs/lesson-10-namespace.md) | **命名空间是运行时的字符串前缀**（代码一个字不改）、**四种名字**（相对 `chatter` / 绝对 `/chatter` / 私有 `~/x` / 节点名 `__node`）各自加不加前缀、**⭐ 日志名用 `.` 不用 `/`**（`rcutils/logging.h:37`）、**⭐⭐ 重映射左边必须写「展开后的全名」——写错【不报错，只是什么都不做】**、C/D/E/F 四格对照、`-r` 在 `ros2 run` 是 remap 但在 **`ros2 bag play` 是 `--rate`**、bag 存的是**全名**、**⭐⭐ 破第 9 关悬案：`-d` 是 DDS 配对窗口**（基线 2/9 → 加 `-d` 15/15） |
 | [第 11 关 · Composition](docs/lesson-11-composition.md) | **组件 = 没有 `main` 的节点类，容器 = 那个造它的进程**、**⭐⭐ 节点数 ≠ 进程数**（3 组件 / 4 节点 / **1 进程**）、`RCLCPP_COMPONENTS_REGISTER_NODE` 与构造函数契约、**ament 登记表** `Talker;lib/libtalker_component.so`（`.so` 必须装 `lib/` 而非 `lib/${PROJECT_NAME}/`，装错 = **build 全绿 + `types` 列得出 + `load` 才炸**）、容器的**三个隐形服务**、`pgrep -c compo` 为什么不是全名（`comm` 截 15 字符）、**⭐⭐ DDS 按类型名配对**：两个字段一模一样的 `String` 也配不上、**失败的装载会吃掉一个 component 编号**（所以编号有洞 = 中间炸过）、删除 build/install 重来一遍验证 CMake 无缺行 |
 | [第 12 关 · 组件与执行器](docs/lesson-12-component-executor.md) | **⭐⭐ 执行器住在【进程】里，不住在【节点】里**（同一个 `.so`、连 build 都不重做，只换容器 → 两个组件的命运完全相反）、`component_container` = `SingleThreadedExecutor`（1 只）/ `_mt` = `MultiThreadedExecutor`（一池子）、**`mt` 已是老写法**（该用 `--executor-type multi-threaded`）、**手数数得出来 = 进程线程数**（16 核机器实测 18 / 33 / `thread_num:=1`→18 / `:=2`→19，底下 17 条是 DDS 的）、**`--ros_args` 写成下划线 = 参数【静默失效】**、**判据：盯 a 自己的「开始睡→睡醒了」中间有没有夹进 `[sleeper_b]`**（单线程 0 次 / 多线程 18 次）、**⭐ 只看快慢看不出手数**（装 2 个时单线程和多线程周期都是 1.000）、**产能上限**：3 个组件要 1.5 秒/秒 vs 一只手 1 秒 → **先来后到，最后装的稳定 2.0 秒**（换装载顺序 = 数字跟着换名字）、**定时器周期从上一次【响】算起**、**⭐ `pgrep` 带不带 `-f` 是两个东西**（带 `-f` = 整条命令行 → 会把 gnome-keyring 的 `--components=pkcs11` 捞上来；不带 = 进程名 → 干净。第 11 关那把 `pgrep -c compo` 是**对的**） |
+| [第 13 关 · 回调组进容器](docs/lesson-13-callback-group.md) | **⭐⭐ 回调组住在【节点】里**（第 12 关把执行器放进进程，本关把回调组放进节点）、**手是进程给的，锁是节点自己带的**、**`default_callback_group` 是【每个节点各一份】**（证据在第 7 关自己写的 `group_demo.py`：`callback_group=self.default_callback_group`，那个 `self` 是节点）→ **2 个组件能插队（2 把锁）、1 个节点里的 2 个定时器不能（1 把锁）**、**判据与第 12 关一字不改**（只把参照物从"另一个节点"换成"同一节点的另一个定时器"）、**⭐⭐ 题眼：多线程容器 + 同一节点两个定时器 = 0 次交错**（16 只手 vs 1 只手毫无区别）、**判据实验：只换锁不换手 → 交错回来了**（`A/B 开始睡` 差 **0.088 毫秒**、两次「睡醒了」差 **8 纳秒**）、**⭐⭐ 静默炸弹：`create_callback_group` 内联进 `create_wall_timer` = 一拍都不响、一个字不报**（源码 `node_base.hpp:154` / `executor_entities_collection.hpp:49` 存的是 **`WeakPtr`** —— 你不接住它，它就没了；`create_publisher` / `create_subscription` / `create_timer` 同此脾气）、`component_container_mt` **已弃用**（改用 `--executor-type multi-threaded`）、**"绿灯 ≠ 做了你想做的事"家族第六个成员**（**装载回执三行齐全 + `[sleeper]` 零行**） |
 | [专项 01 · 怎么看日志](docs/skill-01-log-reading.md) | **仪式行 vs 业务行**、看日志 = 预期 − 实际、**对表法**、**先描述再解释**、三层防线（行数/内容/数值）、`grep \| cat -n` 挑业务行、`diff` 自动对表、残留进程会让日志变成垃圾 |
 | [C++ 支线 01](docs/cpp-01-getting-started.md) | 为什么单开一个包、Python ↔ C++ 对照表、`<>` 里的类型、成员变量类型怎么定、`[this]()` lambda、`RCLCPP_INFO` 占位符、CMake 的点名制、跨语言互操作 |
 | [C++ 支线 02](docs/cpp-02-subscriber.md) | 订阅者的完整形状（消息类型从"第 1 个参数"挪进 `<>`）、⭐ lambda 是"适配器"（定时器收空、订阅者收 msg）、**⭐⭐ 成员变量 4 块结构 `rclcpp::<角色><消息类型>::SharedPtr`**、`.` vs `->` 剥盒子、**格式符按位置对（错位只给 warning，build 全绿但打印垃圾）**、`%f` 默认 6 位小数、CMake 新增可执行文件的 **4 处**、**实测：嵌套消息不用显式 find 依赖**、跨语言逐字段一致 |
@@ -550,13 +558,25 @@ colcon test-result --verbose                            # ② 查看（不执行
       ③ 换容器时只装了 b、把 a 忘在死掉的老容器里（法证：`Loaded component 1` 说明它是头一个）
       ④ 跳过"先预测再运行"（第 3 次）⑤ 贴 `component types` 输出没截断（与第 9 关"贴半截"相反的老账）
       ⑥ `_mt` 起来自带一句"改用 `--executor-type`"的提示
+- [x] ~~**第 12 关 §9.2 的题 1**（一个组件挂两个定时器 + 回调组进容器）~~（2026-09-25 已做 —— **它就是第 13 关**）
+- [x] ~~写 `docs/lesson-13-callback-group.md`~~（2026-09-25 已写，10 节完整结构 + 6 道自测题 + 6 道留给下次）。
+      **本关没有新增文件**，只改 [sleeper_component.cpp](src/hello_ros_cpp/src/sleeper_component.cpp) 的 4 行
+      （两个 `CallbackGroup::SharedPtr` 成员变量 + 构造函数里两行 `create_callback_group`），
+      CMake **一个字没动**；素材来源：六行答案键**全部实测**（第 3 行单线程 + 同组 = 严格交替 46 行 0 交错、
+      第 4 行多线程 + 同组 = **仍然 0 交错** ← 题眼、第 5 行多线程 + 各组 = **夹**（0.088 毫秒 / 8 纳秒）、
+      第 6 行组没人接住 = **一拍都不响**；第 1、2 行沿用第 12 关老数据）；
+      踩坑记录七条为 ① 把"单线程容器"预测成"会夹" ② 把"各给一个组"预测成"不夹"（**这两次错得比对的更有用** ——
+      第 5 行那次错逼出了判据实验）③ 贴输出恰好剪掉了判据那一行（**但这次他自己把前面那段完整重贴了回来**，
+      第 9 关"贴半截"之后第一次）④ 残留进程（**第 6 次**，403 秒）⑤ ⭐⭐ **静默炸弹**（本关最值钱的一块）
+      ⑥ **我自己的**：`&` 挂 `&&` 链上，`$!` 拿到的是外壳 PID（老坑当场复发）
+      ⑦ `ros2 component load` 前忘了 `source install/setup.bash`（第 11 关坑 6 复发）
 - [ ] （可选）`docs/cpp-03-*.md`：C++ 版**发布者** —— 用 C++ 写 `status_talker`，
       把 `.` 和 `->` 的**赋值**方向也走一遍（`msg->position.x = ...`），补上 cpp-02 §9.2 题 ④
 - [ ] （可选）按上面 `xmllint` 那节修一下 `/etc/gai.conf`
 
 ---
 
-**当前进度：第 1～12 关全部完成（核心基础十关 + Composition + 组件 × 执行器）＋ C++ 支线 01 / 02 完成 ——
+**当前进度：第 1～13 关全部完成（核心基础十关 + Composition + 组件 × 执行器 + 回调组 × 容器）＋ C++ 支线 01 / 02 完成 ——
 C++ 侧已经能读话题、收自定义多字段消息，并且和 Python 节点双向互通；
 第 9 关第一次把数据冻结到磁盘上，也第一次让你亲手用「判据」把一个悬空的结论钉死；
 第 10 关让同一份代码起了两遍而互不打架，并且把第 9 关那个悬案从「现象」钉成了「病因」；
@@ -566,11 +586,18 @@ C++ 侧已经能读话题、收自定义多字段消息，并且和 Python 节�
 第 12 关紧接着把**下一层默认**也掀了 —— 节点住进同一个进程之后，
 **"执行器有几只手"这句话从节点那一层挪到了进程那一层**：
 同一个 `.so`、连 build 都不重做，只换一个容器，两个组件的命运就完全相反（严格交替 ↔ 互相插队），
-而**手数不是猜的，是数出来的**（进程线程数 18 / 33，`thread_num:=1` 一给就回到 18、交错次数 18→0）。**
+而**手数不是猜的，是数出来的**（进程线程数 18 / 33，`thread_num:=1` 一给就回到 18、交错次数 18→0）；
+第 13 关把**再下一层默认**掀了 —— 「一个节点 = 一只手」也不成立，
+**回调组住在【节点】里**：同一个 `.so`、同一个容器，**2 个组件能互相插队、1 个节点里的 2 个定时器却不能**
+（多线程容器 16 只手对这两个定时器**毫无区别**），而**只换锁不换手，插队就回来了**
+（两次「开始睡」差 0.088 毫秒、两次「睡醒了」差 8 纳秒）——
+**这一关最值钱的一块不是结论，是一个不报错的坑：你造了它，但没人接住，它就一声不响地没了。**
 
-**下一步：①（可选）⭐ 本关 §9.2 题 1：一个组件挂【两个】定时器、都放默认回调组，
-     在单线程和多线程容器里分别会怎样？—— 这是把第 7 关「回调组」也接进容器进程里（改几行组件代码就行）；
-     ②（可选）本关 §9.2 题 3：手数设 2 装 3 个组件会怎样？（产能上限的直接延伸，要先写预测）；
-     ③（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；
-     ④（可选）把 action / service 也接到 C++ 支线；
-     ⑤ 第 7 / 第 8 / 第 10 / 第 11 关 §9.2 的加练题；⑥ parameter callback 深挖。**
+**下一步：①（可选）⭐ 本关 §9.2 题 2：把两个互斥组换成【可重入】组，
+     同一个节点、两个可重入定时器、多线程容器会怎样？（第 7 关"可重入 = 允许重叠不 = 允许并行"的复验，要先写预测）；
+     ②（可选）本关 §9.2 题 3：一个组件挂 3 个定时器、都在默认组会怎样？谁吃亏？
+     ③（可选）本关 §9.2 题 1：`--executor-type events-cbg` / `--isolated` 是什么？（第 12 关留下的）；
+     ④（可选）本关 §9.2 题 6：把 `create_publisher` 的返回值也丢掉 —— 验证静默炸弹的推广；
+     ⑤（可选）C++ 版发布者 `status_talker`（补 `.` / `->` 的赋值方向）；
+     ⑥（可选）把 action / service 也接到 C++ 支线；
+     ⑦ 第 8 / 第 10 关 §9.2 的加练题；⑧ parameter callback 深挖。**
