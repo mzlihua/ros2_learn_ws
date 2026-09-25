@@ -39,6 +39,14 @@ target_link_libraries(talker_component
   ${std_msgs_TARGETS})
 rclcpp_components_register_nodes(talker_component "Talker")
 
+# ---- 第 12 关：测速仪组件 ----
+# 和第 11 关那三行一模一样，只有两个名字换了、并且【不链 std_msgs】——它不发消息。
+add_library(sleeper_component SHARED src/sleeper_component.cpp)
+target_link_libraries(sleeper_component
+  rclcpp::rclcpp
+  rclcpp_components::component)
+rclcpp_components_register_nodes(sleeper_component "Sleeper")
+
 # ---- 第 1 步：C++ 版订阅者（订阅 /chatter，和 talker.cpp 同一个消息类型）----
 # 这三行我替你写好了。等第 2 步换成 RobotStatus 时，轮到你照它们改。
 add_executable(listener src/listener.cpp)
@@ -59,7 +67,7 @@ install(TARGETS hello_cpp talker listener status_listener
 # 上面那 4 个是"程序"，装在包专属的 lib/hello_ros_cpp/ 下，只有这个包自己用。
 # 组件是"库"，容器要拿着 ament 索引里记的路径 "lib/libtalker_component.so"
 # 去 dlopen —— 装错层级 = 索引挂号了、东西却不在那儿 = load 时找不到库。
-install(TARGETS talker_component
+install(TARGETS talker_component sleeper_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin)
