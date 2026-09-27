@@ -32,7 +32,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "A 第%d拍 开始睡", count_a_);
 
         // 睡觉这段时间，它攥着执行器的那只手不放 —— 这就是本关的"测速仪"
-        rclcpp::sleep_for(500ms);
+        rclcpp::sleep_for(1500ms);
 
         RCLCPP_INFO(this->get_logger(), "A 第%d拍 睡醒了", count_a_);
     }
@@ -42,7 +42,7 @@ private:
         count_b_ += 1;
         RCLCPP_INFO(this->get_logger(), "B 第%d拍 开始睡", count_b_);
 
-        rclcpp::sleep_for(500ms);
+        rclcpp::sleep_for(1500ms);
 
         RCLCPP_INFO(this->get_logger(), "B 第%d拍 睡醒了", count_b_);
     }
