@@ -839,7 +839,7 @@ using WeakCallbackGroupsToNodesMap = std::map<CallbackGroup::WeakPtr, …, owner
 
 | 待办 | 出处 | 备注 |
 |---|---|---|
-| **实验 E：数据竞争 + `std::mutex`** | 本关 §0.5 | 让两份重叠副本对**同一个数**做「读→睡→加一→写回」，看结果对不对，再补 `std::mutex` 对比。**份量够单独开一关**（第 15 关候选） |
+| ✅ **实验 E：数据竞争 + `std::mutex`** | 本关 §0.5 | **已开成第 15 关**（2026-10-08 封板）：[lesson-15-data-race.md](lesson-15-data-race.md) —— 实测 `无锁 → ④=1/4`、`回调组的锁管不了数据`、`④=1/1 有两种来源` |
 | **"为什么总是 B 先上"** | 本关 §7 附 | 名单顺序 = 回调组地址顺序（`memory_strategy.hpp:46`），**推断未经实验**。要证的话：多跑几次、换 `--isolated`、或者把创建顺序反过来 |
 | `--isolated` / `events-cbg` | 第 13 关 §9.2 题 1 | 还没做 |
 | 丢掉 `create_publisher` 的返回值 | 第 13 关 §9.2 题 6 | 还没做 |
@@ -851,6 +851,9 @@ using WeakCallbackGroupsToNodesMap = std::map<CallbackGroup::WeakPtr, …, owner
 
 ## 相关笔记
 
+- [第 15 关 · 数据竞争与 `std::mutex`](lesson-15-data-race.md) —— **本关的直接下一关**：
+  本关 §10 那个"实验 E"就是它，已开完并封板。它接着问一句本章没问的话：
+  **两份重叠的副本撞过之后，你那个数，还算不算数？**
 - [第 13 关 · 回调组进容器](lesson-13-callback-group.md) —— **本关的直接上一关**：
   它把回调组放进**节点**、量出"锁 = 组对象的个数"；本关拧的就是它那两个 `MutuallyExclusive`。
 - [第 7 关 · 执行器与回调组](lesson-07-executor.md) —— **"可重入 = 允许重叠，不是允许并行"这句的出处**，
