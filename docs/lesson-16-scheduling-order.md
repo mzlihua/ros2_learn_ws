@@ -1031,7 +1031,7 @@ Unloaded component 1 from '/ComponentManager' container node     ← 回执说�
 | 3 | **拿掉 `deque` 那个猜测** | §2.6 的堵点 | 本机只装了 rclcpp **头文件**，`executor.cpp` / `multi_threaded_executor.cpp` **都没有**。找一份对应版本的源码，看 `get_next_executable()` 到底从**哪一头**取 |
 | 4 | **单线程容器跑本关**（`--executor-type single-threaded`） | §0.5 | 手只有一只 ⇒ 顺序还会是 `C A B` 吗？（对照第 15 关 §10 题 1） |
 | 5 | **把组类型换成 `MutuallyExclusive`** | 第 13/14 关的老旋钮 | 「锁」那一格动一下，顺序动不动？ |
-| 6 | **第 13 关 §9.2 题 1**：`events-cbg` / `--isolated` | 第 13 关 | 回调组与执行器 API 的边角 |
+| 6 | ✅ ~~**第 13 关 §9.2 题 1**：`events-cbg` / `--isolated`~~ | 第 13 关 | **本关的"下一关"就是它**（2026-10-09 封板）：[lesson-17-executor-implementation.md](lesson-17-executor-implementation.md) |
 | 7 | **参数回调深挖**（`add_on_set_parameters_callback`） | 参数专题 | 那也是"回调"，也会被并发打到 |
 
 ⭐ **划掉一条**：第 15 关 §10 的第 3 题「**为什么总是 B 先上**」——

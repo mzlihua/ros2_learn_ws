@@ -840,8 +840,8 @@ using WeakCallbackGroupsToNodesMap = std::map<CallbackGroup::WeakPtr, …, owner
 | 待办 | 出处 | 备注 |
 |---|---|---|
 | ✅ **实验 E：数据竞争 + `std::mutex`** | 本关 §0.5 | **已开成第 15 关**（2026-10-08 封板）：[lesson-15-data-race.md](lesson-15-data-race.md) —— 实测 `无锁 → ④=1/4`、`回调组的锁管不了数据`、`④=1/1 有两种来源` |
-| **"为什么总是 B 先上"** | 本关 §7 附 | 名单顺序 = 回调组地址顺序（`memory_strategy.hpp:46`），**推断未经实验**。要证的话：多跑几次、换 `--isolated`、或者把创建顺序反过来 |
-| `--isolated` / `events-cbg` | 第 13 关 §9.2 题 1 | 还没做 |
+| ✅ **"为什么总是 B 先上"** | 本关 §7 附 | **已开成第 16 关**（2026-10-08 封板）：[lesson-16-scheduling-order.md](lesson-16-scheduling-order.md) —— 答案 = 名单按**地址升序**排（`std::set` + `owner_less`），执行器从**尾巴**取（20/20 一次不翻）。⚠️ 「从尾巴取」是**推**出来的，本机只有头文件 |
+| ✅ `--isolated` / `events-cbg` | 第 13 关 §9.2 题 1 | **已开成第 17 关**（2026-10-09 封板）：[lesson-17-executor-implementation.md](lesson-17-executor-implementation.md) —— `events-cbg` = 换**实现**（方向反了、且变成「抢」）；`--isolated` = **每个组件一个自己的执行器**（数手 33/33/33 → 18/34/50） |
 | 丢掉 `create_publisher` 的返回值 | 第 13 关 §9.2 题 6 | 还没做 |
 | 专项 02 §8.2 的五道思考题 | 专项 02 | 剩 4 道 |
 | parameter callback 深挖 | 第 9 关起 | 还没开 |

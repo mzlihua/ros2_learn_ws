@@ -575,8 +575,11 @@ Use 'component_container --executor-type multi-threaded' instead.
 
 ### 9.2 留给下次的思考题（无答案）
 
-1. **`--executor-type events-cbg` 是什么？加上 `--isolated` 又是什么？**
+1. ✅ **做掉了（第 17 关，2026-10-09）** ~~**`--executor-type events-cbg` 是什么？加上 `--isolated` 又是什么？**~~
    （第 12 关 §9.2 题 2 留下的，两关都没答。`component_container --help` 里有这两个词。）
+   → 答案在 [第 17 关 · 换个执行器](lesson-17-executor-implementation.md)：
+   `events-cbg` = **换一整台机器**（换执行器**实现**，不是换档位），它换掉的是「**挑哪个回调来跑**」；
+   `--isolated` = **执行器 ↔ 组件的关系**（每个组件配一个**自己**的执行器，数手数得出来：33/33/33 → 18/34/50）。
 2. **把两个互斥组换成【可重入】组（`Reentrant`），会怎样？**
    同一个节点、两个可重入定时器、多线程容器 —— **先写预测**。
    （提示：第 7 关的结论是"可重入组 = 允许重叠，不是允许并行"，本关要验证它在**同一节点的两个定时器**上成不成立。）
