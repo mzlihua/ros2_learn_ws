@@ -12,6 +12,14 @@
 //      objdump -d --demangle --no-show-raw-insn probe_mo_cost \
 //        | grep -A8 'store_relaxed\|store_seq'      # 以此类推
 //
+//  ⚠️ ARM（aarch64）上 GCC 默认用 **outline atomics**：
+//     读 / 写四格是内联的（str/ldr ↔ stlr/ldar），
+//     但 `fetch_add` / CAS 在调用点只看到 `bl __aarch64_...` ——
+//     真正的那条指令在 libgcc 的 helper 里，且运行时按 HWCAP 二选一（LSE / LL·SC）。
+//     想直接看内联的 ldadd / ldaddal / cas / casal，用
+//         g++ -O2 -std=c++20 -march=armv8.2-a+lse -mno-outline-atomics ...
+//     本仓库的 probe_mo_cost.sh 第 ③ 段会把这三块都打出来。
+//
 //  ⚠️ 这是【量具】，不是实验对象。本关要量的是"同一句代码的两版 order"，
 //     所以八格都必须是【同一段循环】，只差那一个 order 参数。
 //     想改任何一格，八格都要跟着改 —— 不然比出来的不是 order 的价钱。
@@ -70,7 +78,8 @@ __attribute__((noinline)) void add_seq(long n)
 
 // ---------- ④ 比较交换 ----------
 // 每圈都是"一次 CAS"：第一圈成功（0→1），之后一直失败（现在不是 0 了）。
-// 失败和成功走的是**同一条指令**（lock cmpxchg），所以价钱一样 —— 这一点本关要验。
+// 失败和成功走的是**同一条指令**（ARM 上 `cas` / `casal`；x86 上是 lock cmpxchg），
+// 所以价钱一样 —— 这一点本关要验。
 __attribute__((noinline)) int cas_relaxed(long n)
 {
     int ok = 0;

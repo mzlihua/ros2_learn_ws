@@ -7,10 +7,15 @@
 #  用法：  bash probe_restart.sh          # 默认 10 轮
 #          bash probe_restart.sh 1        # 先跑 1 轮，验尺子
 #
-#  ⚠️ 为什么直接跑 /opt/ros/.../component_container，而不是 ros2 run？
+#  ⚠️ 为什么直接跑 component_container 的二进制，而不是 ros2 run？
 #     `ros2 run` 是个 Python 外壳，`$!` 拿到的是【外壳】的 PID，
 #     kill 它杀不到里面的容器 —— 容器会变孤儿（工作区老坑，
 #     而且孤儿还会伪造实验数据）。
+#
+#  ⚠️ 2026-11-22 换机适配（原机 Lyrical/x86 → 本机 Jazzy/ARM）：
+#     本关要的是【多线程】容器。原机用 `component_container --executor-type multi-threaded`；
+#     Jazzy 的 `component_container` **不认识** `--executor-type`（会静默忽略 →
+#     容器变成单线程 → 数据全废）。Jazzy 用单独的二进制 `component_container_mt`。
 #
 #  ⚠️ 每轮之间必须【重启进程】—— 这是本实验的全部意义。
 #     如果只是 load 一个新组件，地址是同一个进程里的，不算数。
@@ -19,14 +24,24 @@
 set -u
 
 N="${1:-10}"
-BIN=/opt/ros/lyrical/lib/rclcpp_components/component_container
 OUTDIR="$(mktemp -d /tmp/lesson16-XXXXXX)"
 
-# shellcheck disable=SC1091
-source /opt/ros/lyrical/setup.bash
-# shellcheck disable=SC1091
-source "$HOME/ros2_learn_ws/install/setup.bash"
+# ---- ROS 2 发行版 / 工作区自适应：不再写死 lyrical 和 /home/xxx ----
+DISTRO="${ROS_DISTRO:-jazzy}"
+ROS_SETUP="/opt/ros/${DISTRO}/setup.bash"
+WS_SETUP="${WS_SETUP:-$HOME/ros2_learn_ws/install/setup.bash}"
+[ -f "$ROS_SETUP" ] || { echo "!! 找不到 $ROS_SETUP（ROS 装在哪？）" >&2; exit 1; }
+[ -f "$WS_SETUP" ] || { echo "!! 找不到 $WS_SETUP（先 colcon build）" >&2; exit 1; }
 
+# shellcheck disable=SC1090
+set +u
+source "$ROS_SETUP"
+source "$WS_SETUP"
+set -u
+
+BIN="$(ros2 pkg prefix rclcpp_components)/lib/rclcpp_components/component_container_mt"
+
+echo "容器：$BIN"
 echo "日志目录：$OUTDIR"
 echo
 printf '%-4s  %-6s  %s\n' "轮次" "先上" "第 1 对「读到」（谁在上面就是谁）"
@@ -37,7 +52,7 @@ a_count=0
 for i in $(seq 1 "$N"); do
     log="$OUTDIR/run_$(printf '%02d' "$i").log"
 
-    "$BIN" --executor-type multi-threaded >"$log" 2>&1 &
+    "$BIN" >"$log" 2>&1 &
     pid=$!
 
     sleep 3                                     # 等容器起来
@@ -69,4 +84,4 @@ echo
 echo "======== 收工自查（必须是 0）========"
 leftovers=$(pgrep -c compo || true)
 echo "   残留容器进程：${leftovers:-0}"
-echo "   （不是 0 的话：pkill -x component_container）"
+echo "   （不是 0 的话：pkill -f /rclcpp_components/component_container）"

@@ -2,13 +2,17 @@
 
 > **进度：⏳ 预习已落（2026-10-27）—— 正课待开始。**
 >
+> 🔁 **2026-11-22 换机适配（原机 x86-64 → 本机树莓派 ARMv8 / ROS 2 Jazzy）**：
+> §0 原来按 **x86 的 TSO + `lock` 前缀**写；本机是 **ARMv8.2 / Cortex-A76 ×4 / 弱内存模型**，
+> 前提已整块换成 ARM（§0.2(c)(d)(e)）。**正课结论仍未填 —— §0 只放前提。**
+>
 > ⚠️ **本关是【代码关】**：动 `sleeper_component.cpp`（第 21 关 **C 版** ＋ 两个 order 参数），
 > 另加一个**不在 ROS 里**的小探针 `probe_mo_cost.cpp` —— 本关第一次问"**机器本身**"。
 >
 > ⭐ **本关的来路**：第 21 关 §10.4 最后留给本关的那句话 ——
 >
 > > "能发现"这件事，在多核、乱序的机器上还成立吗？
-> > （C 版每一圈都验，但**验之前读到的东西**，在 16 核上会不会已经过期？）
+> > （C 版每一圈都验，但**验之前读到的东西**，在多核上会不会已经过期？）
 >
 > ⭐ **一句话（正课量完再填）**：
 >
@@ -46,8 +50,9 @@
 |---|---|---|
 | `std::atomic` 的默认 order 是 `seq_cst` | 理论 | ✅ 写 |
 | `relaxed` 只保原子性、不保证顺序 | 理论 | ✅ 写 |
-| x86 的内存模型（TSO）只允许**一种**重排 | 理论 | ✅ 写 |
-| x86 上 `lock` 前缀 = 一个**全屏障** | 理论 | ✅ 写 |
+| ARMv8 是**弱内存模型**：四种重排原则上都允许 | 理论 | ✅ 写 |
+| ARMv8 上 `dmb ish` = 一个**全屏障**；`stlr` / `ldar` 只堵单边 | 理论 | ✅ 写 |
+| 本机 g++ 默认用 **outline atomics**（RMW 藏进 libgcc helper） | 工具链事实 | ✅ 写 |
 | 八格里**哪几格**机器码变了 | **结果** | ❌ **不写** |
 | "写"那一格 seq_cst 比 relaxed 贵几倍 | **结果** | ❌ **不写** |
 | 第 21 关 C 版换成 relaxed 之后 `④'` 是多少 | **结果** | ❌ **不写** |
@@ -100,12 +105,14 @@
 | **原子性** | atomicity | 一次访问**不可分割**：要么全做，要么没做 | 第 20 / 21 关量的就是它 |
 | **可见性** | visibility | 一个线程写进去的值，别的线程**什么时候**能看到 | ⭐ 本关 |
 | **重排** | reordering | 编译器或 CPU 把两条指令的**实际执行次序**调换 | ⭐ 本关 |
-| **写缓冲** | store buffer | 写先进一个小队列，再由硬件慢慢放出去；放出去之前别人看不见 | x86 唯一的那个"口子" |
-| **内存屏障** | memory barrier / fence | 一条"到此为止，前面的都已经让别人看见了"的指令 | `lock` / `xchg` / `mfence` / ARM 的 `dmb` |
-| **获取 / 释放** | acquire / release | 一对**握手**：release = "我把东西准备好了"；acquire = "我看见你准备好了" | order 的两个值 |
+| **写缓冲** | store buffer | 写先进一个小队列，再由硬件慢慢放出去；放出去之前别人看不见 | ARM 允许 `StoreLoad` 重排的一个来源（x86 只有这一个口子） |
+| **内存屏障** | memory barrier / fence | 一条"到此为止，前面的都已经让别人看见了"的指令 | ARM：`dmb ish`（全屏障）／`stlr`、`ldar`（单边）；x86：`lock`、`mfence` |
+| **获取 / 释放** | acquire / release | 一对**握手**：release = "我把东西准备好了"；acquire = "我看见你准备好了" | order 的两个值；ARM 上编在指令后缀里（`a` / `l`） |
 | **顺序一致** | sequentially consistent（`seq_cst`） | 全世界所有原子操作存在**一个共同的总顺序** | ⭐ 默认值 |
 | **放松** | relaxed | 只保原子性，顺序**一概不管** | 最便宜的那档 |
-| **TSO** | Total Store Order | x86 的内存模型：几乎是顺序一致，只开**一个**口子 | 本机 |
+| **弱内存模型** | weak memory model | 四种重排原则上都允许；只有 acquire / release / seq_cst 才收窄 | ⭐ **本机 ARMv8** |
+| **多副本原子** | multi-copy atomic | 一次写对所有观察者**同时**可见（≠ 不重排） | ARMv8 有；比老 ARM/POWER 强 |
+| **TSO** | Total Store Order | x86 的内存模型：几乎是顺序一致，只开**一个**口子 | **原机**（第 1–21 关的实测机器） |
 
 #### (b) ⭐⭐ 原子性 ≠ 可见性（两个问题，正交）
 
@@ -121,25 +128,30 @@
 
 > 一句话：**原子性管"改不坏"，顺序管"看不看得见"。**
 
-#### (c) ⭐⭐ 四种重排，和 x86 只开的那个口子
+#### (c) ⭐⭐ 四种重排：x86 只开一个口子，ARM **全开**
 
 CPU 为了快，可以把指令的实际执行次序调换。只有四种组合：
 
-| 重排 | 长什么样 | x86 允许吗 | 后果 |
-|---|---|---|---|
-| **LoadLoad** 读 → 读 | 两次读换次序 | ❌ 不允许 | —— |
-| **LoadStore** 读 → 写 | 写跑到读**前面** | ❌ 不允许 | —— |
-| **StoreStore** 写 → 写 | 两次写换次序 | ❌ 不允许 | —— |
-| **StoreLoad** 写 → 读 | ⭐ 读跑到写**前面** | ✅ **允许** | 别人可能还看不见你那次写 |
+| 重排 | 长什么样 | x86 / TSO 允许吗 | ⭐ 本机 ARMv8 允许吗 | 后果 |
+|---|---|:-:|:-:|---|
+| **LoadLoad** 读 → 读 | 两次读换次序 | ❌ 不允许 | ✅ **允许** | 顺序可能和你写的不一样 |
+| **LoadStore** 读 → 写 | 写跑到读**前面** | ❌ 不允许 | ✅ **允许** | 同上 |
+| **StoreStore** 写 → 写 | 两次写换次序 | ❌ 不允许 | ✅ **允许** | 别人看到的写次序可能反了 |
+| **StoreLoad** 写 → 读 | ⭐ 读跑到写**前面** | ✅ **允许** | ✅ **允许** | 别人可能还看不见你那次写 |
 
-⭐ x86 的内存模型叫 **TSO**（Total Store Order，总存储顺序）。它几乎是"顺序一致"的，
-**只开了一个口子**：`StoreLoad`。因为写先进**写缓冲**（store buffer），还没落进缓存，
-后面的读就跑掉了。
+⭐ **x86 的内存模型叫 TSO**（Total Store Order）：几乎是"顺序一致"，**只开 `StoreLoad` 一个口子**。
+原机（第 1–21 关实测的那台）是 TSO —— 所以以前很多"顺序出事"的实验在那台机器上**量不出来**。
 
-⭐ **`seq_cst` 要干的事 = 把四个口子全堵上。** 在 x86 上，前三个口子**本来就堵着**，
-所以只有涉及 `StoreLoad` 的那一格才需要真加屏障。
+⭐ **本机是 ARMv8.2-A（Cortex-A76 ×4）—— 弱内存模型**：上表**四个口子原则上都开着**。
+这就是为什么本关要换前提：**不能拿 x86 的 TSO 去推 ARM 的机器码。**
 
-（本机是 12 代 i5、x86-64、16 线程 —— 就是 TSO。）
+⚠️ 但 ARMv8 有一件事比老 ARM / POWER 强：它是**多副本原子**（multi-copy atomic）——
+一次写对所有观察者**同时**变得可见。所以 ARMv8 乱的是**次序**，不是"有人先看到、有人后看到"。
+
+⭐ **`seq_cst` 要干的事 = 把四个口子全堵上。** 在 x86 上前三个本来就堵着，
+只有 `StoreLoad` 要真加屏障；**在 ARM 上四边都要管**。
+
+（原机：12 代 i5、x86-64、16 线程 —— TSO。本机：树莓派、ARMv8.2-A、4 核 —— 弱。）
 
 #### (d) ⭐ 六种 order（`<atomic>` 里的六个值）
 
@@ -172,25 +184,40 @@ bool compare_exchange_strong(int & expected, int desired,
 //    （不能填 release / acq_rel —— 标准的规定；理由：失败时根本没写，没有"释放"可言）
 ```
 
-⭐ **`lock` 前缀 = 一个全屏障**（这是本关推理的**关键前提**，记住它）：
-x86 上要保证"读-改-写"一口气做完，必须加 `lock` 前缀；
-而 `lock` 本身就会把**四个口子全堵上** —— 它比 `seq_cst` 要的还多。
+⭐⭐ **ARM 的屏障形状**（这是本关推理的**关键前提**，记住它）：
+
+| 形状 | ARM 上是什么 | 堵几边 |
+|---|---|---|
+| **全屏障** | `dmb ish` | **四条边全堵** |
+| **release 写** | `stlr`（store-release） | 只堵**前面的访问**，不让它们跑到这次写后面 |
+| **acquire 读** | `ldar`（load-acquire） | 只堵**后面的访问**，不让它跑到这次读前面 |
+| **RMW（LSE）** | `ldadd` / `ldaddal`、`cas` / `casal` | 后缀 `a` = acquire，`l` = release，`al` = 两边都要 |
+
+⭐ 记法：**原子性由 RMW 指令本身给；`seq_cst` 额外买的是"顺序"。**
+ARM 不像 x86 那样靠一个 `lock` 前缀把四边全堵 —— 它把 acquire / release
+**编进指令后缀**里；需要"四边全堵"时才单独用 `dmb ish`。
+
+⚠️ 还有一层**本机工具链**的事实：g++ 默认开 **outline atomics**。
+`fetch_add` / CAS 在调用点只有 `bl __aarch64_ldadd4_acq_rel` 这种调用；
+真正那条 ARM 原子指令、以及 **LSE 还是 LL·SC** 的选择，都在 libgcc helper 里，
+**运行时**按 CPU 能力（HWCAP）二选一。看机器码时别停在调用点。
 
 #### (e) ⭐ 硬件对照 —— 三种机器，"原子"附送的顺序不一样多
 
 | 机器 | 内存模型 | "写"的机器码（`relaxed` → `seq_cst`） | 顺序贵在哪 |
 |---|---|---|---|
 | **单片机 Cortex-M**（单核） | 单核，几乎没有"别的核" | `STR` → `STR` | 关中断就够（第 15 关那张表） |
-| **本机 x86-64**（16 线程） | **TSO**：只许 `StoreLoad` 重排 | 待量 | 写要压住写缓冲 |
-| **树莓派 ARMv8**（多核） | **弱**：四种都允许 | 待看（`str` → `stlr`） | 读、写都可能要屏障 |
+| **原机 x86-64**（16 线程） | **TSO**：只许 `StoreLoad` 重排 | 原机已量（历史数据） | 写要压住写缓冲 |
+| ⭐ **本机 树莓派 ARMv8.2-A**（Cortex-A76 ×4） | **弱**：四种都允许 | **待量 / 待查**（探针第 ③ 段） | 读、写都可能要屏障；RMW 还多一层 libgcc helper |
 
 ⭐ 一句话：
 
 > **"原子"这个词，在不同机器上附送的"顺序"不一样多。**
-> 标准只保证最低的那份；x86 常常多送；ARM 不送。
+> 标准只保证最低的那份；x86 常常多送；ARM 只在你说要的时候（`a` / `l` / `al`）才送。
 
-⚠️ **不能照搬的那句**：单片机是**单核**，"关中断包一段"就够；本机 16 核，
-"别人什么时候看得见"是硬件问题，不是关个中断能解决的。
+⚠️ **不能照搬的那句**：单片机是**单核**，"关中断包一段"就够；
+本机是**4 核**（原机 16 线程），"别人什么时候看得见"是硬件问题，不是关个中断能解决的。
+而且**原机的 TSO 结论不能搬到本机** —— 本机四个口子都开着。
 
 #### (f) ⭐ 本关的三把尺子（各自量什么、量不到什么）
 
@@ -208,10 +235,12 @@ x86 上要保证"读-改-写"一口气做完，必须加 `lock` 前缀；
 ⇒ 修法：**换尺子**，并且**两把尺子一起看**：
 反汇编说"**变了没有**"，`ns` 说"**贵了多少**"。
 
-⚠️ **为什么本关不用"两个线程的 litmus"当尺子**：本机是 TSO（强内存模型），
-唯一开着的 `StoreLoad` 窗口窄得可怜，标准的 store-buffering 石蕊试纸在这台机器上量不出来。
-**量不到 ≠ 不存在** —— 想直接看见"顺序出事"，得换一台弱内存模型的机器（树莓派）。
-这一笔**挂账**，见 §10。
+⚠️ **为什么本关不把"两个线程的 litmus"当【主尺子】**：
+本机是 **ARMv8 弱内存模型**，标准的 store-buffering / message-passing 石蕊试纸
+**理论上能看见**（原机 TSO 才量不出来）。但它是**概率实验**：
+要成百上千轮、要防编译器把循环优化掉，ROS 调度和 DDS 噪声也会搅进来。
+所以本关的主判据仍是**反汇编 + 单线程 ns**；litmus 放加练（§10.2 G 版）。
+单线程探针量的是"**价钱**"，量不到"**可见性**" —— 两把尺子的分工不变。
 
 #### (g) 纪律（第 15 / 16 / 19 / 20 / 21 关立的，本关照用）
 
@@ -257,38 +286,54 @@ bash probe_mo_cost.sh 20000000 5      # 2000 万次，每格取 5 次最小值
 ⭐ **它是量具，不是实验对象**：八格的循环体一模一样，只差**那一个 order 参数**。
 想改任何一格，八格都得跟着改 —— 不然比出来的不是 order 的价钱。
 
-⚠️ **看反汇编的两个坑（本关最容易看花眼的地方）**：
+⚠️ **看反汇编的三个坑（本关最容易看花眼的地方）**：
 
 | 坑 | 为什么 | 怎么办 |
 |---|---|---|
-| 数 `lock` 会漏掉 `xchg` | ⭐ `xchg` **带内存操作数时默认就是加锁的**，汇编里**不写 `lock` 三个字** | 数"**写内存的那一条指令**"，别数前缀 |
+| ⭐ **默认编译下，RMW 的差别不在调用点** | g++ 默认 **outline atomics**：`fetch_add` / CAS 只看到 `bl __aarch64_ldadd4_relax` / `..._acq_rel`，真正指令在 libgcc helper 里，还按 HWCAP 运行时分派 | 看脚本第 ③ 段的 **(A) 调用点 + (B) helper**；或看 **(C) 内联版**（`-march=armv8.2-a+lse -mno-outline-atomics`） |
+| `grep cas` 会捞到普通跳转 | 分支目标写成 `<cas_relaxed(long)+0x68>`，行里也有 "cas" | 锚定**助记符那一列**（脚本已处理）；别对整行 grep |
 | 某格读数约等于 0 / 负数 | 编译器可以把那段整个优化掉，或者提出循环 | **先看反汇编确认那条指令还在**，再信读数 |
 
-**它底下跑的三条命令**（想自己敲也行，脚本里就是这三条）：
+**它底下跑的命令**（想自己敲也行，脚本里就是这些）：
 
 ```bash
+# ① 默认编译（和平时一样）
 g++ -O2 -std=c++20 -o /tmp/probe_mo_cost probe_mo_cost.cpp
 /tmp/probe_mo_cost 10000000 3
+
+# ③(A) 八个函数的调用点（aarch64）
 objdump -d --demangle --no-show-raw-insn /tmp/probe_mo_cost \
-  | sed -n '/<store_relaxed(long)>:/,$p' \
-  | grep -E '^[0-9a-f]+ <(store|load|add|cas)_(relaxed|seq)\(long\)>:|# 4080 <a>'
+  | sed -n '/<store_relaxed(long)>:/,/^$/p'
+
+# ③(B) RMW 真正落到的 libgcc helper（LSE / LL·SC 两条路）
+objdump -d --demangle --no-show-raw-insn /tmp/probe_mo_cost \
+  | sed -n '/<__aarch64_ldadd4_acq_rel>:/,/^$/p'
+
+# ③(C) 想直接看内联的 ldadd / ldaddal / cas / casal
+g++ -O2 -std=c++20 -march=armv8.2-a+lse -mno-outline-atomics \
+  -o /tmp/probe_mo_cost_lse probe_mo_cost.cpp
+objdump -d --demangle --no-show-raw-insn /tmp/probe_mo_cost_lse \
+  | sed -n '/<add_seq(long)>:/,/^$/p'
 ```
 
 #### (c) 【查】四参数 CAS 的签名（这一格是【查】的，不是【推】的）
 
 ```bash
-grep -n "compare_exchange_strong" /usr/include/c++/15/bits/atomic_base.h | head
-grep -n "__is_valid_cmpexch_failure_order" /usr/include/c++/15/bits/atomic_base.h
+grep -n "compare_exchange_strong" /usr/include/c++/13/bits/atomic_base.h | head
+grep -n "__is_valid_cmpexch_failure_order" /usr/include/c++/13/bits/atomic_base.h
 ```
 
 | 找什么 | 在哪 | 为什么 |
 |---|---|---|
-| 四参数版 `compare_exchange_strong(__int_type& __i1, __int_type __i2, memory_order __m1, memory_order __m2)` | **568 行**（`atomic<int>` 走的那条；**578 行**是它的 `volatile` 双胞胎，别抄错） | 成功 / 失败**各一个** order |
-| 三参数版（`memory_order __m = memory_order_seq_cst`） | **589 行** | 第 21 关用的就是它；失败那个 order 是**推出来的**（`__cmpexch_failure_order`，**126 行**：`acq_rel → acquire`、`release → relaxed`） |
-| 限制 `__is_valid_cmpexch_failure_order` | **133 ~ 138 行** | failure order **不能是** `release` / `acq_rel` |
+| 四参数版 `compare_exchange_strong(__int_type& __i1, __int_type __i2, memory_order __m1, memory_order __m2)` | **572 行**（`atomic<int>` 走的那条；**582 行**是它的 `volatile` 双胞胎，别抄错） | 成功 / 失败**各一个** order |
+| 三参数版（`memory_order __m = memory_order_seq_cst`） | **593 行** | 第 21 关用的就是它；失败那个 order 是**推出来的**（`__cmpexch_failure_order`，**123 行**：`acq_rel → acquire`、`release → relaxed`） |
+| 限制 `__is_valid_cmpexch_failure_order` | **130 ~ 134 行** | failure order **不能是** `release` / `acq_rel` |
 
 > ⚠️ 老规矩：**同一个函数名在头文件里出现了好几次，要连类型名一起核**。
-> `atomic<int>` 是 `__int_type&` 那条；**不是** 1398 行那个 `_Fp`（浮点）。
+> `atomic<int>` 是 `__int_type&` 那条；**不是** 1311 行那个 `_Fp`（浮点）。
+>
+> 💡 行号是 **g++ 13（本机）** 的。头文件换版本，行号会变 —— 所以**先 grep 再定位**，
+> 别把行号当标准答案抄。
 
 #### (d) 跑前自查（第 15 / 17 / 20 / 21 关立的）
 
@@ -296,7 +341,7 @@ grep -n "__is_valid_cmpexch_failure_order" /usr/include/c++/15/bits/atomic_base.
 |---|---|
 | 改完先抓一眼 | `grep -n "memory_order\|compare_exchange\|shared_" src/hello_ros_cpp/src/sleeper_component.cpp` |
 | `.so` 是不是最新的 | `ls -l --time-style=+%m-%d_%H:%M` 比 `.so` 和源码的时间戳 |
-| 起容器前 source 了吗 | `echo $AMENT_PREFIX_PATH` 里**有** `/home/l/ros2_learn_ws/install` |
+| 起容器前 source 了吗 | `echo $AMENT_PREFIX_PATH` 里**有** `$HOME/ros2_learn_ws/install` |
 | 起之前 / 收工 | `ros2 node list` 空；`pgrep -c compo` = 0 |
 
 ### 0.4 和前面哪几关连着
@@ -329,12 +374,14 @@ grep -n "__is_valid_cmpexch_failure_order" /usr/include/c++/15/bits/atomic_base.
 | **B** | `probe_mo_cost.sh` | ——（同一份） | 3（取最小值） | **价钱** `ns/次` |
 | **C** | ROS 组件（C' 版） | 只有 order 那两个参数 | 3 | `④'`、重试次数 |
 
-⭐ **对照数据**：实验 C 的对照组**不用重跑** —— 就是第 21 关 §7.1 里 C 版那 3 轮
-（`读到 20 / 写回 20 / 重试 23·26·24 / 终值 20`）。
+⭐ **对照数据（换机后必须改）**：第 21 关 §7.1 那 3 轮是**原机 x86** 上量的
+（`重试 23·26·24 / 终值 20`）。**跨机器不能比**：线程数、调度、原子指令价钱全变了。
+本机做实验 C 时，**先跑一遍 C 版（未改 order）3 轮**当同机对照，再跑 C' 版。
 
 #### 表 A：机器码（**先押，再跑**）
 
-> 押法：**只用 §0.2(c) 的四张重排 + §0.2(d) 那句"`lock` = 全屏障"推**，不许去试。
+> 押法：**只用 §0.2(c) 的重排表 + §0.2(d) 的 ARM 屏障形状 + 本机 g++ 的 outline atomics 事实推**，不许去试。
+> ⚠️ 只押"变不变 / 差在哪一类"，**别押具体助记符** —— 助记符是【查】的（跑完就有了）。
 
 | # | 操作 | 押：两版机器码**一样吗** | 押：不一样的话，差在哪一类 | 一句前提（凭什么这么押） |
 |:-:|---|:-:|---|---|
@@ -392,15 +439,17 @@ grep -n "__is_valid_cmpexch_failure_order" /usr/include/c++/15/bits/atomic_base.
 
 ### 2.1 原子性 ≠ 可见性
 
-### 2.2 四种重排，x86 只开一个口子
+### 2.2 四种重排：x86 只开一个口子，ARM 全开
 
 ### 2.3 一张表：哪个操作要为 `seq_cst` 付钱
 
-### 2.4 `lock` 为什么是"全屏障"
+### 2.4 ARM 的屏障：`dmb ish` 为什么是"全屏障"，`stlr` / `ldar` 为什么只堵一边
 
 ### 2.5 回到第 21 关：order 换了，值还对吗
 
 ### 2.6 ⭐ 尺子：`④'` 看不见"顺序"
+
+### 2.7 outline atomics：为什么调用点只看到 `bl __aarch64_...`
 
 ---
 
@@ -424,6 +473,13 @@ bash probe_mo_cost.sh
 colcon build --packages-select hello_ros_cpp --symlink-install
 bash probe_run_sleeper.sh c1
 
+# 手动起多线程容器（本机 Jazzy）
+source /opt/ros/jazzy/setup.bash
+source "$HOME/ros2_learn_ws/install/setup.bash"
+ros2 pkg prefix rclcpp_components        # 确认真的是 jazzy
+# ⚠️ Jazzy **没有** --executor-type；写了会被静默忽略 → 单线程 → 数据全废
+"$(ros2 pkg prefix rclcpp_components)/lib/rclcpp_components/component_container_mt"
+
 # 收工自查
 pgrep -c compo            # 必须是 0
 ```
@@ -435,6 +491,9 @@ pgrep -c compo            # 必须是 0
 | 想数什么 | 拿什么数 |
 |---|---|
 | 机器码变了没有 | `bash probe_mo_cost.sh` 第 ③ 段 |
+| RMW 真正落到哪条 ARM 指令 | 第 ③ 段 **(B) helper**（LSE / LL·SC）或 **(C) 内联版** |
+| 有没有走 outline helper | `objdump -d /tmp/probe_mo_cost \| grep __aarch64_` |
+| 全屏障长什么样 | 第 ③ 段搜 `dmb`（本关的八格未必有；`atomic_thread_fence` 才有） |
 | `ns/次` | 同脚本第 ② 段（取最小值） |
 | `④'`（新） | 最后那个 `shared_` ÷ `grep -c '读到'` |
 | 重试过几次 | `grep -c '重试'` |
@@ -473,17 +532,24 @@ pgrep -c compo            # 必须是 0
 
 | # | 待办 | 来路 |
 |---|---|---|
-| 1 | **弱内存模型上直接看见"顺序出事"**（树莓派 / ARMv8；本机 TSO 量不出来） | §0.2(f) |
+| 1 | **ARMv8 上直接看见"顺序出事"**（litmus）—— 本机已经是弱内存模型，可以做；本关只把它放加练（G 版），没当主尺子 | §0.2(f) |
 | 2 | **ABA 问题** —— CAS 的盲点（第 21 关 §10.1） | 第 21 关 |
 | 3 | **`compare_exchange_weak`** —— 为什么循环里常用它 | 第 21 关 |
 | 4 | **那 3 条不明的手**（第五次挂账） | 第 19 关 |
 | 5 | **「换方向 vs 换名单」死结**（第六次挂账） | 第 16 / 18 关 |
+| 6 | ⚠️ **第 17–19 关的 `events-cbg` 在本机 Jazzy 容器里选不了**：`EventsCBGExecutor` 只在 rclcpp 头文件里，`component_container` 没有选执行器的入口。要复现那几格，得自己写一个容器 | 换机适配（2026-11-22） |
+| 7 | ⚠️ **原机（x86 / Lyrical）的实测数据不可跨机比较**：第 16–21 关若要在本机复现，必须先重跑基线 | 换机适配（2026-11-22） |
 
 ### 10.2 加练（想再拧一格的话）
 
 - **D 版**：把探针里的四格再加两格 —— `release` 写 + `acquire` 读（握手），看机器码长什么样。
-- **E 版**：交叉编译到 ARM（`g++-aarch64-linux-gnu`），`g++ -S` 看同一行代码在树莓派上变成什么。
+- **E 版**（原：交叉编译到 ARM）—— **本机就是 ARM**，直接跑 `bash probe_mo_cost.sh` 就是这一版。
 - **F 版**：实验 C 再改成 `seq_cst` 的显式写法 —— 和默认值那一版对比，**读数应该一模一样**（同一个旋钮）。
+- **G 版 ⭐ 新增（本机终于能做）**：两个线程的 litmus —— store-buffering（SB）和 message-passing（MP）。
+  在 ARMv8 上跑 N 轮，看"两个线程都读到 0"会不会出现；再加 `release` / `acquire` / `dmb ish` 对照。
+  ⚠️ 这是概率实验：轮数、绑核、编译器屏障都要先定好；别拿一两轮下结论。
+- **H 版**：同一个探针，默认编译 vs `-march=armv8.2-a+lse -mno-outline-atomics` 重编，
+  对比"调用点 → helper"和"内联指令"两种形状 —— 专门量 **outline atomics 这层壳**的代价。
 
 ### 10.3 教学记录
 
@@ -491,6 +557,7 @@ pgrep -c compo            # 必须是 0
 |---|---|---|
 | 2026-10-27 | 落 §0 预习 | 选题依据：第 21 关 §10.4 那句"能发现，在多核乱序的机器上还成立吗" |
 | | | ⚠️ 本关加的**新量具**：`probe_mo_cost.sh`（八格机器码 ＋ 价钱）。**它是我写的** —— 但判断全归你 |
+| 2026-11-22 | **换机适配**（原机 x86-64/Lyrical → 本机 ARMv8/Jazzy） | §0 的 TSO/`lock` 前提整块换成 ARM 弱内存；探针第 ③ 段重写成 ARM 三块（调用点 / helper / 内联）；§0.5 的对账改为**本机重跑 C 基线**。量具与判断分工不变 |
 
 ### 10.4 下一关候选
 
@@ -500,7 +567,7 @@ pgrep -c compo            # 必须是 0
 | ② | **`compare_exchange_weak`** | 会"无缘无故"失败，为什么循环里常用它 |
 | ③ | 第 19 关那 3 条不明的手 | 第五次 |
 | ④ | 「换方向 vs 换名单」死结 | 第六次 |
-| ⑤ | **树莓派上的 `memory_order`** | 弱内存模型，真能看见"顺序出事" |
+| ⑤ | **ARM 上的 litmus（SB / MP）** | 本机就是弱内存模型 —— 能真看见"顺序出事"（§10.2 G 版） |
 | ⑥ | C++ 支线 03 | —— |
 
 ---

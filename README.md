@@ -20,26 +20,77 @@
 
 ## 环境
 
+> 🔁 **2026-11-22 换机**：工作机从原机（x86-64 / Lyrical）换到**树莓派 5 / ARMv8 / Jazzy**。
+> 第 1–21 关的实测数据是**原机**上量的历史记录；依赖机器的读数（线程数、偏向、ns）**不能跨机照搬**。
+
+### 当前机器（2026-11-22 起）
+
+| 项 | 版本 |
+|---|---|
+| 硬件 | Raspberry Pi 5 Model B，8 GB，Cortex-A76 ×4（aarch64） |
+| 操作系统 | Ubuntu 24.04.5 LTS |
+| ROS 2 | **Jazzy**（装在 `/opt/ros/jazzy`） |
+| Python | 3.12.3 |
+| C++ | g++ 13.3（C++20） |
+| CMake | 3.28.3 |
+| 构建工具 | `colcon` |
+| RMW | Fast DDS（`rmw_fastrtps_cpp`） |
+| 包 | `hello_ros`（`ament_python`）、`hello_ros_cpp`（`ament_cmake`）、`hello_ros_interfaces`（`ament_cmake`，自定义消息） |
+
+### 原机（第 1–21 关实测所用，仅历史对照）
+
 | 项 | 版本 |
 |---|---|
 | 操作系统 | Ubuntu 26.04.1 LTS |
-| ROS 2 | **Lyrical**（装在 `/opt/ros/lyrical`） |
+| ROS 2 | Lyrical（`/opt/ros/lyrical`） |
 | Python | 3.14.4 |
-| C++ | g++ 15.2（C++20） |
+| C++ | g++ 15.2 |
 | CMake | 4.2.3 |
-| 构建工具 | `colcon` |
-| 包 | `hello_ros`（`ament_python`）、`hello_ros_cpp`（`ament_cmake`）、`hello_ros_interfaces`（`ament_cmake`，自定义消息） |
+| CPU | 12 代 i5，x86-64，16 线程（TSO） |
 
 ⚠️ **每个新开的终端都要 source**：
 
 ```bash
-source /opt/ros/lyrical/setup.bash          # ROS 本体
+source /opt/ros/jazzy/setup.bash            # ROS 本体（原机是 lyrical）
 source ~/ros2_learn_ws/install/setup.bash   # 本工作区
 ```
 
 忘了第二条 → 报 `Package 'hello_ros' not found`。
 
 > 💡 如果真的忘了，不用关终端重开，直接在当前终端补敲一句就行。
+
+### 换机适配（2026-11-22）
+
+本机不是原机，以下几处**必须换**：
+
+| 原机（历史文档 / 数据） | 本机（现在跑命令用） |
+|---|---|
+| `/opt/ros/lyrical` | `/opt/ros/jazzy` |
+| `lib/python3.14` | `lib/python3.12` |
+| g++ 15 / 头文件 `c++/15` | g++ 13 / `c++/13` |
+| `/home/l/ros2_learn_ws` | `$HOME/ros2_learn_ws` |
+| x86-64 / TSO / `lock` | ARMv8 弱内存 / `dmb ish`、`stlr`、`ldar`、`ldaddal`、`casal` |
+
+```bash
+# 本机缺这两个包（缺了 build 不一定红，运行时/探针会挂）
+sudo apt install -y build-essential ros-jazzy-example-interfaces
+
+# 只有回炉第 11 关（用官方组件当陪练）才需要这三个
+sudo apt install -y ros-jazzy-composition ros-jazzy-demo-nodes-cpp ros-jazzy-demo-nodes-py
+```
+
+⚠️ **Jazzy 的容器没有 `--executor-type`**：写了会被当成非 ROS 参数**静默忽略** → 容器跑单线程 → 第 16–19 关的数据全废。本机这样起：
+
+| 想要 | 本机怎么起 |
+|---|---|
+| 单线程 | `component_container` |
+| 多线程 | `component_container_mt` |
+| 隔离 | `component_container_isolated`（多线程加 `--use_multi_threaded_executor`） |
+| `events-cbg` | ❌ Jazzy 容器没有入口；要自己写容器（挂账） |
+
+⚠️ 本机空容器自带 **~15–18 条 DDS 线程**；第 12/17 关“数手”要看**增量 Δ**，不是绝对值。
+
+探针脚本已改为自动选二进制 / 自动找 `$HOME` / 自动认 `jazzy`；老文档正文里的 `lyrical`、`/home/l`、`g++ 15` 保留为历史记录。
 
 ---
 
@@ -134,6 +185,7 @@ ros2_learn_ws/
 
 ```bash
 cd ~/ros2_learn_ws
+source /opt/ros/jazzy/setup.bash    # 本机 ROS 2（原机是 lyrical）
 colcon build --symlink-install      # 三个包一起
 source install/setup.bash
 
@@ -222,7 +274,9 @@ ros2 topic info /qos_hist      # 期望：Unknown topic '/qos_hist'
 | 19 | 偏向（「偏」是真的，还是轮数不够？） | ✅ 已完成 | [lesson-19-bias.md](docs/lesson-19-bias.md) |
 | 20 | 原子（`std::atomic` 看住的是「一次」，还是「一段」？） | ✅ 已完成 | [lesson-20-atomic.md](docs/lesson-20-atomic.md) |
 | 21 | 重试（「一段」非得像「一次」那样切不开吗？） | ✅ 已完成 | [lesson-21-retry.md](docs/lesson-21-retry.md) |
-| 22 | 顺序（`memory_order` 省下来的是「钱」，还是「保证」？） | ⏳ 预习已落 | [lesson-22-memory-order.md](docs/lesson-22-memory-order.md) |
+| 22 | 顺序（`memory_order` 省下来的是「钱」，还是「保证」？） | ⏳ 预习已落（2026-11-22 按本机 ARMv8 重写） | [lesson-22-memory-order.md](docs/lesson-22-memory-order.md) |
+
+> ⚠️ 第 1–21 关的「已完成」是在**原机**（x86-64 / Lyrical）上封板的；本机若要复现，先按「换机适配」重跑基线。
 
 **C++ 支线**（2026-09-13 起，与主线并行）
 
@@ -554,7 +608,7 @@ colcon test-result --verbose                            # ② 查看（不执行
 **接口包 `hello_ros_interfaces`**：`lint_cmake` 通过；`xmllint` **当前失败**（⚠️ 同一个网络问题，
 它是 `ament_cmake` 包，走 ctest，默认 60 秒超时 —— 和 `hello_ros_cpp` 一模一样）
 
-> ⚠️ **`xmllint` 在这台机器上会因为网络问题失败**，跟代码无关。原因已查明：
+> ⚠️ **`xmllint` 在原机上会因为网络问题失败**，跟代码无关（本机未复测）。原因已查明：
 >
 > 1. `ament_xmllint` 每次运行都要从 `download.ros.org` 下 XSD 校验文件
 > 2. 这台机器 **IPv6 是黑洞的**：`getaddrinfo` 先返回 IPv6 地址，连过去**没有报错也不回包**，就那么挂着

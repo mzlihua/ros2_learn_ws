@@ -4,13 +4,9 @@
 #
 #  用法：  bash probe_bias.sh <轮数> <档>
 #
-#     bash probe_bias.sh 40 2                 # 40 轮，池子 = 2 只手（events-cbg）
-#     bash probe_bias.sh 40 16                # 40 轮，池子 = 16 只手
+#     bash probe_bias.sh 40 2                 # 40 轮，池子 = 2 只手（本机是 MT + thread_num）
 #     bash probe_bias.sh 40 multi-threaded    # 对照组（基类那套）
 #     bash probe_bias.sh 20 single-threaded   # 一只手那格（确定，不进曲线）
-#
-#  `<档>` 是一个数字 → events-cbg + --ros-args -p thread_num:=<数字>
-#  `<档>` 是一个词   → 原样当执行器类型（single-threaded / multi-threaded / events-cbg）
 #
 #  和第 17/18 关那份 probe_executor.sh 差【两处】，都是修尺子：
 #     ① 判「谁先上」从【行序】换成【时间戳】。
@@ -21,7 +17,16 @@
 #        所以拆成【整秒】+【9 位小数】两段，各自当整数、拼成等长字符串再比。
 #     除这两处外，量具、判据、每轮重开进程的纪律一个字没动（两关的读数才可比）。
 #
-#  ⚠️ 为什么直接跑 /opt/ros/.../component_container，而不是 ros2 run？
+#  ⚠️ 2026-11-22 换机适配（原机 Lyrical/x86 → 本机 Jazzy/ARM）：
+#     · 原机的数字档 = `events-cbg + --ros-args -p thread_num:=N`。
+#       本机 Jazzy 的容器**没有** `--executor-type`，也没暴露 EventsCBGExecutor；
+#       写的 `--executor-type` 会被静默忽略（容器仍跑单线程）—— 会伪造数据。
+#     · 本脚本的替代：数字档 = **multi-threaded + thread_num:=N**（同是“池子大小”这个旋钮，
+#       但执行器实现不是 EventsCBG）。⚠️ 它**不是**原机那一格，读数不能和原机曲线比。
+#       想跑真正的 events-cbg，得自己写容器（挂账，见 SKILL「Jazzy 容器差异」）。
+#     · 明确写 `events-cbg` 的，脚本直接拒绝，不拿别的执行器冒充。
+#
+#  ⚠️ 为什么直接跑容器二进制，而不是 ros2 run？
 #     `ros2 run` 是个 Python 外壳，`$!` 拿到的是【外壳】的 PID，
 #     kill 它杀不到里面的容器 —— 容器会变孤儿（工作区老坑，
 #     而且孤儿还会伪造实验数据）。
@@ -35,27 +40,48 @@ set -u
 N="${1:-10}"
 DANG="${2:-multi-threaded}"
 
+# ---- ROS 2 发行版 / 工作区自适应 ----
+DISTRO="${ROS_DISTRO:-jazzy}"
+ROS_SETUP="/opt/ros/${DISTRO}/setup.bash"
+WS_SETUP="${WS_SETUP:-$HOME/ros2_learn_ws/install/setup.bash}"
+[ -f "$ROS_SETUP" ] || { echo "!! 找不到 $ROS_SETUP（ROS 装在哪？）" >&2; exit 1; }
+[ -f "$WS_SETUP" ] || { echo "!! 找不到 $WS_SETUP（先 colcon build）" >&2; exit 1; }
+
+set +u
+# shellcheck disable=SC1090
+source "$ROS_SETUP"
+source "$WS_SETUP"
+set -u
+
+PREFIX="$(ros2 pkg prefix rclcpp_components)"
+BIN_ST="$PREFIX/lib/rclcpp_components/component_container"
+BIN_MT="$PREFIX/lib/rclcpp_components/component_container_mt"
+
 if [[ "$DANG" =~ ^[0-9]+$ ]]; then
-    EXEC="events-cbg"
+    EXEC="multi-threaded"
+    BIN="$BIN_MT"
     EXTRA=(--ros-args -p "thread_num:=$DANG")
-    LABEL="events-cbg + thread_num:=$DANG"
-else
+    LABEL="multi-threaded + thread_num:=$DANG（替代档，不是原机的 events-cbg）"
+elif [ "$DANG" = "multi-threaded" ]; then
     EXEC="$DANG"
+    BIN="$BIN_MT"
     EXTRA=()
     LABEL="$DANG"
+elif [ "$DANG" = "single-threaded" ]; then
+    EXEC="$DANG"
+    BIN="$BIN_ST"
+    EXTRA=()
+    LABEL="$DANG"
+elif [ "$DANG" = "events-cbg" ]; then
+    echo "❌ 本机是 ROS 2 ${DISTRO}：component_container 不支持 events-cbg。" >&2
+    echo "   EventsCBGExecutor 只在 rclcpp 头文件里，容器没暴露入口；本脚本不拿别的执行器冒充。" >&2
+    exit 2
+else
+    echo "❌ 未知档：$DANG（数字 / single-threaded / multi-threaded）" >&2
+    exit 2
 fi
 
-BIN=/opt/ros/lyrical/lib/rclcpp_components/component_container
 OUTDIR="$(mktemp -d /tmp/lesson19-XXXXXX)"
-
-# ⚠️ 不开 set -u 就 source：/opt/ros/lyrical/setup.bash 里有【未绑定】的变量，
-#    在 set -u 之后 source 会当场报 `AMENT_TRACE_SETUP_FILES: 未绑定的变量`。
-set +u
-# shellcheck disable=SC1091
-source /opt/ros/lyrical/setup.bash
-# shellcheck disable=SC1091
-source "$HOME/ros2_learn_ws/install/setup.bash"
-set -u
 
 echo "档：$LABEL"
 echo "轮数：$N   （每轮重开进程 ⇒ 轮与轮独立，二项分布才套得上）"
@@ -70,7 +96,7 @@ disagree=0
 for i in $(seq 1 "$N"); do
     log="$OUTDIR/run_$(printf '%02d' "$i").log"
 
-    "$BIN" --executor-type "$EXEC" ${EXTRA[@]+"${EXTRA[@]}"} >"$log" 2>&1 &
+    "$BIN" ${EXTRA[@]+"${EXTRA[@]}"} >"$log" 2>&1 &
     pid=$!
 
     sleep 3                                     # 等容器起来
@@ -119,6 +145,6 @@ echo
 echo "======== 收工自查（必须是 0）========"
 leftovers=$(pgrep -c compo || true)
 echo "   残留容器进程：${leftovers:-0}"
-echo "   （不是 0 的话：pkill -x component_container）"
+echo "   （不是 0 的话：pkill -f /rclcpp_components/component_container）"
 echo
 echo "日志在：$OUTDIR"
